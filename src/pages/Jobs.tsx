@@ -252,22 +252,24 @@ function JobDetail({ job, application, onClose }: { job: Job; application?: Appl
             <dt>
               <Wallet size={14} /> Salary
             </dt>
-            <dd>{job.salary}</dd>
+            <dd>{job.salary || 'Not listed'}</dd>
           </div>
         </dl>
 
-        <div className="support-box">
-          <h4>
-            <HeartPulse size={16} /> Support this employer offers
-          </h4>
-          <div className="support-box__list">
-            {job.supports.map((s) => (
-              <span key={s}>
-                <CheckCircle2 size={14} /> {s}
-              </span>
-            ))}
+        {job.supports.length > 0 && (
+          <div className="support-box">
+            <h4>
+              <HeartPulse size={16} /> Support this employer offers
+            </h4>
+            <div className="support-box__list">
+              {job.supports.map((s) => (
+                <span key={s}>
+                  <CheckCircle2 size={14} /> {s}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="detail__actions">
           {application ? (
@@ -550,10 +552,12 @@ export default function Jobs() {
                         <span>{job.type}</span>
                         {app && <StatusPill status={app.status} />}
                       </div>
-                      <div className="job-card__support">
-                        <HeartPulse size={13} /> {job.supports[0]}
-                        {job.supports.length > 1 && ` +${job.supports.length - 1}`}
-                      </div>
+                      {job.supports.length > 0 && (
+                        <div className="job-card__support">
+                          <HeartPulse size={13} /> {job.supports[0]}
+                          {job.supports.length > 1 && ` +${job.supports.length - 1}`}
+                        </div>
+                      )}
                     </div>
                     <div className="job-card__foot">
                       <div>

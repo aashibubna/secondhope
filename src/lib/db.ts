@@ -29,7 +29,7 @@ import {
   type Role,
   type User,
 } from '../types'
-import { db } from './firebase'
+import { col, db } from './firebase'
 
 /* ───────────── helpers ───────────── */
 
@@ -59,35 +59,40 @@ export function createUserDoc(uid: string, name: string, email: string, role: Ro
     saved: [],
     seenAt: Date.now(),
   }
-  return setDoc(doc(db, 'users', uid), user)
+  return setDoc(doc(db, col('users'), uid), user)
 }
 
 export function watchUser(uid: string, cb: (u: User | null) => void, onError: (e: Error) => void) {
   return onSnapshot(
-    doc(db, 'users', uid),
-    (snap) => cb(snap.exists() ? withId<User>(snap.id, { profile: emptyProfile, saved: [], ...snap.data() }) : null),
+    doc(db, col('users'), uid),
+    (snap) => {
+      const data = snap.data()
+      // A doc without a SecondHope role (e.g. from another app on the same project) counts as "no profile yet".
+      const ours = data?.role === 'seeker' || data?.role === 'employer'
+      cb(ours ? withId<User>(snap.id, { profile: emptyProfile, saved: [], ...data }) : null)
+    },
     onError,
   )
 }
 
 export function updateUser(uid: string, patch: Partial<Omit<User, 'id' | 'role' | 'profile'>>) {
-  return updateDoc(doc(db, 'users', uid), patch)
+  return updateDoc(doc(db, col('users'), uid), patch)
 }
 
 export function updateProfile(uid: string, patch: Partial<Profile>) {
   // merge:true deep-merges the `profile` map; arrays inside are replaced as a whole.
-  return setDoc(doc(db, 'users', uid), { profile: patch }, { merge: true })
+  return setDoc(doc(db, col('users'), uid), { profile: patch }, { merge: true })
 }
 
 export function setSaved(uid: string, jobId: string, save: boolean) {
-  return updateDoc(doc(db, 'users', uid), { saved: save ? arrayUnion(jobId) : arrayRemove(jobId) })
+  return updateDoc(doc(db, col('users'), uid), { saved: save ? arrayUnion(jobId) : arrayRemove(jobId) })
 }
 
 /* ───────────── companies ───────────── */
 
 export function watchCompany(id: string, cb: (c: Company | null) => void) {
   return onSnapshot(
-    doc(db, 'companies', id),
+    doc(db, col('companies'), id),
     (snap) => cb(snap.exists() ? withId<Company>(snap.id, snap.data()) : null),
     (e) => {
       console.error(e)
@@ -100,12 +105,12 @@ export function watchCompany(id: string, cb: (c: Company | null) => void) {
 export async function saveCompany(uid: string, data: Omit<Company, 'id' | 'ownerUid' | 'createdAt'>, isNew: boolean) {
   const batch = writeBatch(db)
   batch.set(
-    doc(db, 'companies', uid),
+    doc(db, col('companies'), uid),
     { ...data, ownerUid: uid, ...(isNew ? { createdAt: Date.now() } : {}) },
     { merge: true },
   )
   if (!isNew) {
-    const jobs = await getDocs(query(collection(db, 'jobs'), where('companyId', '==', uid)))
+    const jobs = await getDocs(query(collection(db, col('jobs')), where('companyId', '==', uid)))
     jobs.forEach((j) => batch.update(j.ref, { company: data.name, logo: data.logo, pledge: data.pledge }))
   }
   await batch.commit()
@@ -114,24 +119,24 @@ export async function saveCompany(uid: string, data: Omit<Company, 'id' | 'owner
 /* ───────────── jobs ───────────── */
 
 export const watchOpenJobs = (cb: (jobs: Job[]) => void, onError?: (e: Error) => void) =>
-  watchList<Job>(query(collection(db, 'jobs'), where('status', '==', 'open')), cb, onError)
+  watchList<Job>(query(collection(db, col('jobs')), where('status', '==', 'open')), cb, onError)
 
 export const watchCompanyJobs = (companyId: string, cb: (jobs: Job[]) => void, openOnly = false) =>
   watchList<Job>(
     openOnly
-      ? query(collection(db, 'jobs'), where('companyId', '==', companyId), where('status', '==', 'open'))
-      : query(collection(db, 'jobs'), where('companyId', '==', companyId)),
+      ? query(collection(db, col('jobs')), where('companyId', '==', companyId), where('status', '==', 'open'))
+      : query(collection(db, col('jobs')), where('companyId', '==', companyId)),
     cb,
   )
 
 export async function getJob(id: string) {
-  const snap = await getDoc(doc(db, 'jobs', id))
+  const snap = await getDoc(doc(db, col('jobs'), id))
   return snap.exists() ? withId<Job>(snap.id, snap.data()) : null
 }
 
 export async function createJob(company: Company, input: JobInput) {
   const now = Date.now()
-  const ref = await addDoc(collection(db, 'jobs'), {
+  const ref = await addDoc(collection(db, col('jobs')), {
     ...input,
     companyId: company.id,
     company: company.name,
@@ -144,19 +149,19 @@ export async function createJob(company: Company, input: JobInput) {
 }
 
 export const updateJob = (id: string, patch: Partial<JobInput>) =>
-  updateDoc(doc(db, 'jobs', id), { ...patch, updatedAt: Date.now() })
+  updateDoc(doc(db, col('jobs'), id), { ...patch, updatedAt: Date.now() })
 
-export const deleteJob = (id: string) => deleteDoc(doc(db, 'jobs', id))
+export const deleteJob = (id: string) => deleteDoc(doc(db, col('jobs'), id))
 
 /* ───────────── applications ───────────── */
 
 export const applicationId = (jobId: string, uid: string) => `${jobId}_${uid}`
 
 export const watchMyApplications = (uid: string, cb: (apps: Application[]) => void) =>
-  watchList<Application>(query(collection(db, 'applications'), where('seekerUid', '==', uid)), cb)
+  watchList<Application>(query(collection(db, col('applications')), where('seekerUid', '==', uid)), cb)
 
 export const watchCompanyApplications = (companyId: string, cb: (apps: Application[]) => void) =>
-  watchList<Application>(query(collection(db, 'applications'), where('companyId', '==', companyId)), cb)
+  watchList<Application>(query(collection(db, col('applications')), where('companyId', '==', companyId)), cb)
 
 export function disclosedFor(user: User): Disclosed {
   return { journeyStage: user.profile.journeyStage, supportNeeds: user.profile.supportNeeds }
@@ -205,12 +210,12 @@ export function apply(user: User, job: Job, coverNote: string) {
     createdAt: now,
     updatedAt: now,
   }
-  return setDoc(doc(db, 'applications', applicationId(job.id, user.id)), app)
+  return setDoc(doc(db, col('applications'), applicationId(job.id, user.id)), app)
 }
 
 export function setStatusAsEmployer(app: Application, status: AppStatus, message: string) {
   const now = Date.now()
-  return updateDoc(doc(db, 'applications', app.id), {
+  return updateDoc(doc(db, col('applications'), app.id), {
     status,
     employerMessage: message.trim(),
     updatedBy: 'employer',
@@ -221,7 +226,7 @@ export function setStatusAsEmployer(app: Application, status: AppStatus, message
 
 export function withdraw(app: Application) {
   const now = Date.now()
-  return updateDoc(doc(db, 'applications', app.id), {
+  return updateDoc(doc(db, col('applications'), app.id), {
     status: 'withdrawn',
     updatedBy: 'seeker',
     updatedAt: now,
@@ -231,7 +236,7 @@ export function withdraw(app: Application) {
 
 export function acceptOffer(app: Application, user: User) {
   const now = Date.now()
-  return updateDoc(doc(db, 'applications', app.id), {
+  return updateDoc(doc(db, col('applications'), app.id), {
     status: 'hired',
     updatedBy: 'seeker',
     updatedAt: now,
@@ -247,13 +252,13 @@ export function acceptOffer(app: Application, user: User) {
 export async function deleteUserData(user: User) {
   const batch = writeBatch(db)
   if (user.role === 'seeker') {
-    const apps = await getDocs(query(collection(db, 'applications'), where('seekerUid', '==', user.id)))
+    const apps = await getDocs(query(collection(db, col('applications')), where('seekerUid', '==', user.id)))
     apps.forEach((a) => batch.delete(a.ref))
   } else {
-    const jobs = await getDocs(query(collection(db, 'jobs'), where('companyId', '==', user.id)))
+    const jobs = await getDocs(query(collection(db, col('jobs')), where('companyId', '==', user.id)))
     jobs.forEach((j) => batch.delete(j.ref))
-    batch.delete(doc(db, 'companies', user.id))
+    batch.delete(doc(db, col('companies'), user.id))
   }
-  batch.delete(doc(db, 'users', user.id))
+  batch.delete(doc(db, col('users'), user.id))
   await batch.commit()
 }

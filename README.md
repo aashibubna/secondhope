@@ -50,6 +50,10 @@ Firestore) as the backend.
 6. Optionally add the sample jobs: `npm run seed` (creates 10 demo employer accounts; the password is printed at the end).
 7. `npm run dev`
 
+**Sharing a project with another app?** Set `VITE_COLLECTION_PREFIX=sh_` so SecondHope uses `sh_users`,
+`sh_jobs` and so on, leaving the other app's collections alone. Don't deploy `firestore.rules` there, because
+that would replace the other app's rules. Leave the prefix empty on a dedicated project.
+
 **Switching to another Firebase project later** (e.g. Scholar's): repeat steps 2–5 against that
 project. The code doesn't change, only `.env.local` and the `firebase use` target.
 

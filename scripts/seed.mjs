@@ -30,10 +30,10 @@ import { JOBS } from './seed-data.mjs'
 
 const emulator = process.argv.includes('--emulator')
 
-function readEnv() {
+function readEnv(file) {
   try {
     return Object.fromEntries(
-      readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
+      readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
         .split(/\r?\n/)
         .map((l) => l.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/))
         .filter(Boolean)
@@ -44,7 +44,9 @@ function readEnv() {
   }
 }
 
-const env = readEnv()
+// Same precedence as Vite: .env.local overrides .env.
+const env = { ...readEnv('.env'), ...readEnv('.env.local') }
+const col = (name) => (env.VITE_COLLECTION_PREFIX ?? '') + name
 const app = initializeApp(
   emulator
     ? { apiKey: 'demo-key', projectId: 'demo-secondhope' }
@@ -56,7 +58,7 @@ const app = initializeApp(
       },
 )
 if (!emulator && !env.VITE_FIREBASE_API_KEY) {
-  console.error('No .env.local found. Fill it in from .env.example, or run `npm run seed:emulator`.')
+  console.error('No Firebase config found. Fill in .env (see .env.example), or run `npm run seed:emulator`.')
   process.exit(1)
 }
 
@@ -103,7 +105,7 @@ for (const name of companies) {
   const uid = user.uid
   const now = Date.now()
 
-  await setDoc(doc(db, 'users', uid), {
+  await setDoc(doc(db, col('users'), uid), {
     name: `${name} Hiring`,
     email,
     role: 'employer',
@@ -115,7 +117,7 @@ for (const name of companies) {
   })
 
   const pledge = jobs.some((j) => j.pledge)
-  await setDoc(doc(db, 'companies', uid), {
+  await setDoc(doc(db, col('companies'), uid), {
     ownerUid: uid,
     name,
     logo: first.logo,
@@ -131,13 +133,13 @@ for (const name of companies) {
   })
 
   const batch = writeBatch(db)
-  const old = await getDocs(query(collection(db, 'jobs'), where('companyId', '==', uid)))
+  const old = await getDocs(query(collection(db, col('jobs')), where('companyId', '==', uid)))
   const keep = new Set(jobs.map((j) => `seed-${j.id}`))
   old.forEach((d) => keep.has(d.id) || batch.delete(d.ref))
   for (const j of jobs) {
     const { id, postedDays, ...rest } = j
     const created = now - postedDays * DAY
-    batch.set(doc(db, 'jobs', `seed-${id}`), {
+    batch.set(doc(db, col('jobs'), `seed-${id}`), {
       ...rest,
       pledge,
       companyId: uid,

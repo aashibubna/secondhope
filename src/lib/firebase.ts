@@ -18,6 +18,11 @@ const config = {
 
 export const firebaseConfigured = !!(config.apiKey && config.projectId)
 
+// Optional prefix for every collection name, e.g. `sh_` → `sh_users`, `sh_jobs`.
+// Lets SecondHope share a Firebase project with another app without the two touching each other's data.
+const prefix = env.VITE_COLLECTION_PREFIX ?? ''
+export const col = (name: 'users' | 'companies' | 'jobs' | 'applications') => prefix + name
+
 const app = initializeApp(firebaseConfigured ? config : { apiKey: 'missing', projectId: 'missing' })
 
 export const auth = getAuth(app)
