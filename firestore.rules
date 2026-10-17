@@ -1,0 +1,98 @@
+rules_version = '2';
+
+// SecondHope security model
+// - users/{uid}        private to its owner (this is where health details live)
+// - companies/{uid}    public; one company per employer account, keyed by the owner's uid
+// - jobs/{id}          open jobs are public; the owning company manages them
+// - applications/{jobId_seekerUid}
+//                      a snapshot the seeker sends to one employer. Only those two parties
+//                      can read it, and each side may only make the status moves it owns.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isUser(uid) { return signedIn() && request.auth.uid == uid; }
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function companyAfter(uid) {
+      return getAfter(/databases/$(database)/documents/companies/$(uid)).data;
+    }
+
+    match /users/{uid} {
+      allow read, delete: if isUser(uid);
+      allow create: if isUser(uid)
+        && request.resource.data.role in ['seeker', 'employer']
+        && request.resource.data.keys().hasOnly(
+             ['name', 'email', 'role', 'createdAt', 'onboarded', 'profile', 'saved', 'seenAt']);
+      // The role is fixed at sign-up.
+      allow update: if isUser(uid) && !('role' in changed());
+    }
+
+    match /companies/{cid} {
+      allow read: if true;
+      allow create: if isUser(cid) && myRole() == 'employer'
+        && request.resource.data.ownerUid == cid;
+      allow update: if isUser(cid) && request.resource.data.ownerUid == cid;
+      allow delete: if isUser(cid);
+    }
+
+    match /jobs/{jobId} {
+      // Copies of company fields on a job must match the company itself, so nobody
+      // can show a pledge badge they have not signed.
+      function validJob() {
+        let d = request.resource.data;
+        let c = companyAfter(request.auth.uid);
+        return d.companyId == request.auth.uid
+          && d.company == c.name
+          && d.pledge == c.pledge
+          && d.status in ['open', 'closed']
+          && d.title is string && d.title.size() > 0 && d.title.size() <= 120
+          && d.description is string && d.description.size() <= 5000;
+      }
+
+      allow read: if resource.data.status == 'open' || isUser(resource.data.companyId);
+      allow create: if signedIn() && validJob();
+      allow update: if isUser(resource.data.companyId) && validJob();
+      allow delete: if isUser(resource.data.companyId);
+    }
+
+    match /applications/{appId} {
+      function job(id) { return get(/databases/$(database)/documents/jobs/$(id)).data; }
+      function isSeeker() { return isUser(resource.data.seekerUid); }
+      function isCompany() { return isUser(resource.data.companyId); }
+
+      allow read: if signedIn()
+        && (resource.data.seekerUid == request.auth.uid || resource.data.companyId == request.auth.uid);
+
+      allow create: if signedIn()
+        && myRole() == 'seeker'
+        && request.resource.data.seekerUid == request.auth.uid
+        && appId == request.resource.data.jobId + '_' + request.auth.uid
+        && request.resource.data.status == 'applied'
+        && request.resource.data.updatedBy == 'seeker'
+        && job(request.resource.data.jobId).status == 'open'
+        && request.resource.data.companyId == job(request.resource.data.jobId).companyId
+        && request.resource.data.coverNote.size() <= 3000;
+
+      // Seeker: withdraw at any active stage, or accept an offer.
+      allow update: if isSeeker()
+        && changed().hasOnly(['status', 'updatedBy', 'updatedAt', 'history', 'disclosed'])
+        && request.resource.data.updatedBy == 'seeker'
+        && ((request.resource.data.status == 'withdrawn'
+              && resource.data.status in ['applied', 'reviewing', 'interview', 'offer'])
+            || (request.resource.data.status == 'hired' && resource.data.status == 'offer'));
+
+      // Employer: move the application through their pipeline and leave a message.
+      allow update: if isCompany()
+        && changed().hasOnly(['status', 'employerMessage', 'updatedBy', 'updatedAt', 'history'])
+        && request.resource.data.updatedBy == 'employer'
+        && request.resource.data.status in ['applied', 'reviewing', 'interview', 'offer', 'not-selected']
+        && !(resource.data.status in ['withdrawn', 'hired'])
+        && request.resource.data.employerMessage.size() <= 2000;
+
+      allow delete: if isSeeker();
+    }
+  }
+}

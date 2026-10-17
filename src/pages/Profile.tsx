@@ -3,6 +3,7 @@ import {
   Bookmark,
   Briefcase,
   CheckCircle2,
+  Eye,
   HeartHandshake,
   HeartPulse,
   Lock,
@@ -13,7 +14,8 @@ import {
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
-import { Avatar, CompanyLogo } from '../components/Brand'
+import ApplicantView from '../components/ApplicantView'
+import { Avatar } from '../components/Brand'
 import {
   AboutSection,
   ExperienceSection,
@@ -22,9 +24,10 @@ import {
   SupportSection,
   type SectionProps,
 } from '../components/ProfileSections'
+import { Modal } from '../components/Status'
 import { profileCompletion, useApp } from '../context/store'
-import { JOBS } from '../data/jobs'
 import { DISCLOSURE_OPTIONS, JOURNEY_STAGES } from '../data/options'
+import { disclosedFor, snapshotOf } from '../lib/db'
 import type { Profile as ProfileT } from '../types'
 
 const SECTIONS: {
@@ -111,41 +114,10 @@ function SectionEditor({ id }: { id: string }) {
   )
 }
 
-function JobList({ ids, empty }: { ids: { id: string; meta: string }[]; empty: string }) {
-  if (!ids.length)
-    return (
-      <div className="empty empty--small">
-        <p className="muted">{empty}</p>
-        <Link to="/jobs" className="btn btn--dark btn--sm">
-          Browse jobs <ArrowRight size={14} />
-        </Link>
-      </div>
-    )
-  return (
-    <ul className="mini-jobs">
-      {ids.map(({ id, meta }) => {
-        const job = JOBS.find((j) => j.id === id)
-        if (!job) return null
-        return (
-          <li key={id}>
-            <CompanyLogo {...job.logo} size={40} />
-            <div>
-              <strong>{job.title}</strong>
-              <small>
-                {job.company} · {job.location}
-              </small>
-            </div>
-            <span className="pill">{meta}</span>
-          </li>
-        )
-      })}
-    </ul>
-  )
-}
-
 export default function Profile() {
   const { user } = useApp()
   const [params, setParams] = useSearchParams()
+  const [preview, setPreview] = useState(false)
   const tab = params.get('tab') ?? 'about'
   if (!user) return null
 
@@ -207,34 +179,16 @@ export default function Profile() {
               </button>
             ))}
             <hr />
-            <button className={tab === 'applications' ? 'is-on' : ''} onClick={() => setParams({ tab: 'applications' })}>
-              <Briefcase size={16} /> Applications <span className="count">{user.applied.length}</span>
-            </button>
-            <button className={tab === 'saved' ? 'is-on' : ''} onClick={() => setParams({ tab: 'saved' })}>
+            <Link to="/applications">
+              <Briefcase size={16} /> Applications <ArrowRight size={14} className="push" />
+            </Link>
+            <Link to="/jobs?saved=1">
               <Bookmark size={16} /> Saved jobs <span className="count">{user.saved.length}</span>
-            </button>
+            </Link>
           </nav>
 
           <div className="profile__main">
-            {SECTIONS.some((s) => s.id === tab) && <SectionEditor key={tab} id={tab} />}
-            {tab === 'applications' && (
-              <div className="card">
-                <h2>Applications</h2>
-                <JobList
-                  ids={user.applied.map((a) => ({
-                    id: a.jobId,
-                    meta: `Applied ${new Date(a.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`,
-                  }))}
-                  empty="You haven’t applied anywhere yet. No rush."
-                />
-              </div>
-            )}
-            {tab === 'saved' && (
-              <div className="card">
-                <h2>Saved jobs</h2>
-                <JobList ids={user.saved.map((id) => ({ id, meta: 'Saved' }))} empty="Jobs you bookmark will show up here." />
-              </div>
-            )}
+            <SectionEditor key={tab} id={SECTIONS.some((s) => s.id === tab) ? tab : 'about'} />
           </div>
 
           <aside className="profile__side">
@@ -257,13 +211,28 @@ export default function Profile() {
               <Lock size={18} />
               <h3>Your privacy, protected</h3>
               <p>
-                Health information is never shown on your public profile. Employers only see it if you choose
-                “share” in Journey & privacy.
+                Employers never browse your profile. They only see what you send when you apply — and health details
+                only if you choose “share” in Journey & privacy.
               </p>
+              <button className="btn btn--light btn--sm" onClick={() => setPreview(true)}>
+                <Eye size={14} /> Preview what employers see
+              </button>
             </div>
           </aside>
         </div>
       </div>
+      {preview && (
+        <Modal title="What an employer sees when you apply" onClose={() => setPreview(false)}>
+          <p className="muted small modal__lead">
+            {p.disclosure === 'open'
+              ? 'You share your journey with Cancer-Aware pledged employers. Other employers see the version without it.'
+              : p.disclosure === 'after-offer'
+                ? 'Your journey details stay hidden until you accept an offer.'
+                : 'Your journey and support needs stay private. Only you can see them.'}
+          </p>
+          <ApplicantView applicant={snapshotOf(user)} disclosed={p.disclosure === 'open' ? disclosedFor(user) : null} />
+        </Modal>
+      )}
     </div>
   )
 }

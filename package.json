@@ -7,9 +7,17 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:emulator": "vite --mode emulator",
+    "emulators": "npx -y firebase-tools@13 emulators:start --project demo-secondhope --only auth,firestore",
+    "seed": "node scripts/seed.mjs",
+    "seed:emulator": "node scripts/seed.mjs --emulator",
+    "deploy:rules": "npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes",
+    "deploy": "npm run build && npx -y firebase-tools@latest deploy",
+    "test:rules": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
+    "firebase": "^13.0.0",
     "lucide-react": "^1.58.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -28,5 +36,8 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.69.0",
     "vite": "^8.3.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.6"
   }
 }

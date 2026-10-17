@@ -1,115 +1,142 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { emptyProfile, type Profile, type User } from '../types'
-import { AppContext, type AppState } from './store'
+import {
+  createUserWithEmailAndPassword,
+  deleteUser,
+  EmailAuthProvider,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile as updateAuthProfile,
+  type User as AuthUser,
+} from 'firebase/auth'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import * as data from '../lib/db'
+import { auth } from '../lib/firebase'
+import type { Profile, Role, User } from '../types'
+import { AppContext, friendlyError, type AppState } from './store'
 
-// Front-end only demo storage. Replace with real API calls when a backend exists.
-const USERS_KEY = 'secondhope.users'
-const SESSION_KEY = 'secondhope.session'
-
-function loadUsers(): User[] {
+async function attempt(fn: () => Promise<unknown>) {
   try {
-    return JSON.parse(localStorage.getItem(USERS_KEY) ?? '[]') as User[]
-  } catch {
-    return []
-  }
-}
-
-function saveUsers(users: User[]) {
-  try {
-    localStorage.setItem(USERS_KEY, JSON.stringify(users))
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-function loadSession(): string | null {
-  try {
-    return localStorage.getItem(SESSION_KEY)
-  } catch {
+    await fn()
     return null
+  } catch (e) {
+    console.error(e)
+    return friendlyError(e)
   }
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState<User[]>(loadUsers)
-  const [sessionId, setSessionId] = useState<string | null>(loadSession)
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  const [authReady, setAuthReady] = useState(false)
+  const [user, setUser] = useState<User | null>(null)
+  const [userLoaded, setUserLoaded] = useState(false)
+  // Between creating the Auth account and writing users/{uid}; hides the brief "no profile yet" state.
+  const [creating, setCreating] = useState(false)
 
-  useEffect(() => saveUsers(users), [users])
+  useEffect(
+    () =>
+      onAuthStateChanged(auth, (u) => {
+        setAuthUser(u)
+        setUserLoaded(false)
+        if (!u) setUser(null)
+        setAuthReady(true)
+      }),
+    [],
+  )
+
   useEffect(() => {
-    try {
-      if (sessionId) localStorage.setItem(SESSION_KEY, sessionId)
-      else localStorage.removeItem(SESSION_KEY)
-    } catch {
-      /* storage unavailable */
-    }
-  }, [sessionId])
+    if (!authUser) return
+    return data.watchUser(
+      authUser.uid,
+      (u) => {
+        setUser(u)
+        setUserLoaded(true)
+      },
+      (e) => {
+        console.error(e)
+        setUserLoaded(true)
+      },
+    )
+  }, [authUser])
 
-  const user = users.find((u) => u.id === sessionId) ?? null
+  // `creating` only matters once the Auth account exists; before that, the sign-up form must
+  // stay mounted so it can show errors such as "email already in use".
+  const loading = !authReady || (!!authUser && (creating || !userLoaded))
 
-  const updateUser = useCallback(
-    (fn: (u: User) => User) => {
-      setUsers((all) => all.map((u) => (u.id === sessionId ? fn(u) : u)))
-    },
-    [sessionId],
-  )
-
-  const signUp = useCallback(
-    (name: string, email: string, password: string) => {
-      const normalized = email.trim().toLowerCase()
-      if (users.some((u) => u.email === normalized)) {
-        return 'An account with this email already exists. Try logging in.'
-      }
-      const newUser: User = {
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        email: normalized,
-        password,
-        createdAt: new Date().toISOString(),
-        onboarded: false,
-        profile: { ...emptyProfile },
-        saved: [],
-        applied: [],
-      }
-      setUsers((all) => [...all, newUser])
-      setSessionId(newUser.id)
-      return null
-    },
-    [users],
-  )
-
-  const logIn = useCallback(
-    (email: string, password: string) => {
-      const found = users.find((u) => u.email === email.trim().toLowerCase())
-      if (!found || found.password !== password) return 'That email and password do not match.'
-      setSessionId(found.id)
-      return null
-    },
-    [users],
-  )
-
-  const value = useMemo<AppState>(
-    () => ({
+  const value = useMemo<AppState>(() => {
+    const uid = authUser?.uid
+    return {
+      authUser,
       user,
-      signUp,
-      logIn,
-      logOut: () => setSessionId(null),
-      updateProfile: (patch: Partial<Profile>) =>
-        updateUser((u) => ({ ...u, profile: { ...u.profile, ...patch } })),
-      finishOnboarding: () => updateUser((u) => ({ ...u, onboarded: true })),
-      toggleSave: (jobId: string) =>
-        updateUser((u) => ({
-          ...u,
-          saved: u.saved.includes(jobId) ? u.saved.filter((id) => id !== jobId) : [...u.saved, jobId],
-        })),
-      apply: (jobId: string) =>
-        updateUser((u) =>
-          u.applied.some((a) => a.jobId === jobId)
-            ? u
-            : { ...u, applied: [...u.applied, { jobId, date: new Date().toISOString() }] },
-        ),
-    }),
-    [user, signUp, logIn, updateUser],
-  )
+      loading,
+      needsRole: !!authUser && userLoaded && !user,
+
+      signUp: async (name, email, password, role) => {
+        setCreating(true)
+        const err = await attempt(async () => {
+          const cred = await createUserWithEmailAndPassword(auth, email.trim(), password)
+          await updateAuthProfile(cred.user, { displayName: name.trim() })
+          await data.createUserDoc(cred.user.uid, name.trim(), cred.user.email ?? email.trim(), role)
+          // Non-blocking: we never gate anything behind verification.
+          sendEmailVerification(cred.user).catch(() => {})
+        })
+        setCreating(false)
+        return err
+      },
+
+      logIn: (email, password) => attempt(() => signInWithEmailAndPassword(auth, email.trim(), password)),
+
+      googleSignIn: () => attempt(() => signInWithPopup(auth, new GoogleAuthProvider())),
+
+      chooseRole: (role: Role) =>
+        attempt(async () => {
+          if (!authUser) throw new Error('Not signed in')
+          await data.createUserDoc(
+            authUser.uid,
+            authUser.displayName ?? authUser.email?.split('@')[0] ?? 'Friend',
+            authUser.email ?? '',
+            role,
+          )
+        }),
+
+      resetPassword: (email) => attempt(() => sendPasswordResetEmail(auth, email.trim())),
+
+      logOut: () => signOut(auth),
+
+      updateProfile: async (patch: Partial<Profile>) => {
+        if (uid) await data.updateProfile(uid, patch)
+      },
+
+      finishOnboarding: async () => {
+        if (uid) await data.updateUser(uid, { onboarded: true })
+      },
+
+      toggleSave: (jobId: string) => {
+        if (uid && user) data.setSaved(uid, jobId, !user.saved.includes(jobId)).catch(console.error)
+      },
+
+      markSeen: () => {
+        if (uid) data.updateUser(uid, { seenAt: Date.now() }).catch(console.error)
+      },
+
+      deleteAccount: (password) =>
+        attempt(async () => {
+          if (!authUser || !user) throw new Error('Not signed in')
+          if (password && authUser.email) {
+            await reauthenticateWithCredential(authUser, EmailAuthProvider.credential(authUser.email, password))
+          } else {
+            await reauthenticateWithPopup(authUser, new GoogleAuthProvider())
+          }
+          await data.deleteUserData(user)
+          await deleteUser(authUser)
+        }),
+    }
+  }, [authUser, user, loading, userLoaded])
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }

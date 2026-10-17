@@ -144,10 +144,12 @@ export function Toggle({
   checked,
   onChange,
   label,
+  hideLabel = false,
 }: {
   checked: boolean
   onChange: (v: boolean) => void
   label: string
+  hideLabel?: boolean
 }) {
   return (
     <button
@@ -160,7 +162,7 @@ export function Toggle({
       <span className="toggle__track">
         <span className="toggle__thumb" />
       </span>
-      {label}
+      {hideLabel ? <span className="sr-only">{label}</span> : label}
     </button>
   )
 }

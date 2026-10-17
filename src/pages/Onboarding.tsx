@@ -1,5 +1,6 @@
 import { ArrowLeft, ArrowRight, Check, Heart } from 'lucide-react'
 import { useState } from 'react'
+import type { Profile } from '../types'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '../components/Brand'
 import {
@@ -49,16 +50,28 @@ export default function Onboarding() {
   const { user, updateProfile, finishOnboarding } = useApp()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
+  // Edits stay local and are saved at each step, so typing never waits on the network.
+  const [draft, setDraft] = useState<Profile | null>(user?.profile ?? null)
+  const [busy, setBusy] = useState(false)
 
-  if (!user) return null
+  if (!user || !draft) return null
   const { title, subtitle, Component } = STEPS[step]!
   const last = step === STEPS.length - 1
 
+  const save = () => updateProfile(draft).catch(console.error)
+  const goTo = (i: number) => {
+    save()
+    setStep(i)
+  }
   const finish = () => {
-    finishOnboarding()
+    setBusy(true)
+    // Firestore applies writes locally first, so there's no need to wait for the server
+    // (which would hang on a flaky connection).
+    save()
+    finishOnboarding().catch(console.error)
     navigate('/jobs')
   }
-  const next = () => (last ? finish() : setStep((s) => s + 1))
+  const next = () => (last ? finish() : goTo(step + 1))
 
   return (
     <div className="onboard">
@@ -74,17 +87,15 @@ export default function Onboarding() {
         </div>
         <ol className="onboard__steps">
           {STEPS.map((s, i) => (
-            <li
-              key={s.title}
-              className={i === step ? 'is-current' : i < step ? 'is-done' : ''}
-              onClick={() => setStep(i)}
-            >
-              <span className="onboard__dot">{i < step ? <Check size={12} strokeWidth={3} /> : i + 1}</span>
-              {s.label}
+            <li key={s.title} className={i === step ? 'is-current' : i < step ? 'is-done' : ''}>
+              <button onClick={() => goTo(i)} aria-current={i === step ? 'step' : undefined}>
+                <span className="onboard__dot">{i < step ? <Check size={12} strokeWidth={3} /> : i + 1}</span>
+                {s.label}
+              </button>
             </li>
           ))}
         </ol>
-        <p className="onboard__side-foot">You can update all of this later in Profile → Settings.</p>
+        <p className="onboard__side-foot">Your progress is saved as you go. You can change any of this later from your profile.</p>
       </aside>
 
       <main className="onboard__main">
@@ -92,7 +103,7 @@ export default function Onboarding() {
           <div className="progress">
             <span style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
           </div>
-          <button className="link-btn" onClick={finish}>
+          <button className="link-btn" onClick={finish} disabled={busy}>
             Skip setup, I’ll do it later
           </button>
         </div>
@@ -104,21 +115,21 @@ export default function Onboarding() {
           <h1 className="onboard__title">{title}</h1>
           <p className="muted">{subtitle}</p>
           <div className="onboard__form">
-            <Component profile={user.profile} set={updateProfile} />
+            <Component profile={draft} set={(patch) => setDraft((d) => ({ ...d!, ...patch }))} />
           </div>
         </div>
 
         <div className="onboard__actions">
-          <button className="btn btn--ghost" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>
+          <button className="btn btn--ghost" disabled={step === 0} onClick={() => goTo(step - 1)}>
             <ArrowLeft size={16} /> Back
           </button>
           <div className="row">
             {!last && (
-              <button className="btn btn--text" onClick={() => setStep((s) => s + 1)}>
+              <button className="btn btn--text" onClick={() => goTo(step + 1)}>
                 Skip this step
               </button>
             )}
-            <button className="btn btn--primary" onClick={next}>
+            <button className="btn btn--primary" onClick={next} disabled={busy}>
               {last ? 'Finish & see jobs' : 'Continue'} <ArrowRight size={16} />
             </button>
           </div>

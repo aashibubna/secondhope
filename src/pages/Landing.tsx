@@ -19,7 +19,7 @@ import {
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Avatar, Logo, Ribbon } from '../components/Brand'
-import { useApp } from '../context/store'
+import { homeFor, useApp } from '../context/store'
 
 const STAGES = [
   {
@@ -95,7 +95,7 @@ export default function Landing() {
   const goSearch = (e: React.FormEvent) => {
     e.preventDefault()
     const target = `/jobs${query ? `?q=${encodeURIComponent(query)}` : ''}`
-    navigate(user ? target : '/signup', { state: { next: target } })
+    navigate(!user ? '/signup' : user.role === 'seeker' ? target : homeFor(user), { state: { next: target } })
   }
 
   return (
@@ -113,8 +113,8 @@ export default function Landing() {
           </div>
           <div className="navbar__actions">
             {user ? (
-              <Link to="/jobs" className="btn btn--dark btn--sm">
-                Go to jobs <ArrowRight size={14} />
+              <Link to={homeFor(user)} className="btn btn--dark btn--sm">
+                {user.role === 'employer' ? 'Go to dashboard' : 'Go to jobs'} <ArrowRight size={14} />
               </Link>
             ) : (
               <>
@@ -233,9 +233,14 @@ export default function Landing() {
         <div className="container connect">
           <div>
             <h2 className="h2">Connecting Resilient People With Employers Who Get It</h2>
-            <Link to="/signup" className="btn btn--dark btn--sm">
-              Join for free
-            </Link>
+            <div className="row">
+              <Link to="/signup" className="btn btn--dark btn--sm">
+                Join for free
+              </Link>
+              <Link to="/signup?role=employer" className="btn btn--ghost btn--sm">
+                I’m hiring <ArrowRight size={14} />
+              </Link>
+            </div>
           </div>
           <div>
             <p className="connect__lead">
@@ -430,7 +435,7 @@ export default function Landing() {
               <div>
                 <h5>Employers</h5>
                 <a href="#employers">The Pledge</a>
-                <a href="#employers">Post a job</a>
+                <Link to="/signup?role=employer">Post a job</Link>
                 <a href="#stories">Success stories</a>
               </div>
               <div>

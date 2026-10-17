@@ -7,22 +7,26 @@ import {
   CheckCircle2,
   Clock,
   HeartPulse,
+  Lock,
   MapPin,
+  PartyPopper,
   Search,
   SlidersHorizontal,
   Sparkles,
   Wallet,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import { CompanyLogo } from '../components/Brand'
-import { Toggle } from '../components/Fields'
-import { profileCompletion, matchScore, useApp } from '../context/store'
-import { JOBS } from '../data/jobs'
-import { FUNCTIONS, JOB_TYPES, SUPPORTS, WORK_MODES } from '../data/options'
-import type { Job } from '../types'
+import { Field, Toggle } from '../components/Fields'
+import { Modal, Spinner, StatusPill } from '../components/Status'
+import { friendlyError, matchScore, profileCompletion, timeAgo, useApp } from '../context/store'
+import { FUNCTIONS, JOB_HOURS, JOB_TYPES, SUPPORTS, WORK_MODES } from '../data/options'
+import { apply, willDisclose } from '../lib/db'
+import { useMyApplications, useOpenJobs } from '../lib/hooks'
+import type { Application, Job } from '../types'
 
 interface Filters {
   modes: string[]
@@ -60,10 +64,135 @@ function CheckList({
   )
 }
 
-function JobDetail({ job, onClose }: { job: Job; onClose?: () => void }) {
-  const { user, toggleSave, apply } = useApp()
+function ApplyModal({ job, onClose }: { job: Job; onClose: () => void }) {
+  const { user } = useApp()
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  if (!user) return null
+  const p = user.profile
+  const completion = profileCompletion(p)
+  const sharing = willDisclose(user, job)
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      await apply(user, job, note)
+      setDone(true)
+    } catch (err) {
+      console.error(err)
+      setError(friendlyError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (done)
+    return (
+      <Modal title="Application sent" onClose={onClose}>
+        <div className="apply-done">
+          <span className="apply-done__icon">
+            <PartyPopper size={26} />
+          </span>
+          <h3>Well done for putting yourself forward.</h3>
+          <p className="muted">
+            {job.company} now has your application for <strong>{job.title}</strong>. We’ll let you know here as soon as
+            they update it. In the meantime, rest up — you’ve done the hard part.
+          </p>
+          <div className="row row--center">
+            <Link to="/applications" className="btn btn--dark btn--sm">
+              Track my applications
+            </Link>
+            <button className="btn btn--ghost btn--sm" onClick={onClose}>
+              Keep browsing
+            </button>
+          </div>
+        </div>
+      </Modal>
+    )
+
+  return (
+    <Modal title={`Apply to ${job.company}`} onClose={onClose}>
+      <form className="stack" onSubmit={submit}>
+        <div className="apply-job">
+          <CompanyLogo {...job.logo} size={44} />
+          <div>
+            <strong>{job.title}</strong>
+            <small>
+              {job.company} · {job.location}
+            </small>
+          </div>
+        </div>
+
+        <div className="apply-share">
+          <h4>What {job.company} will see</h4>
+          <ul>
+            <li>
+              <CheckCircle2 size={14} /> Your name, email{p.phone ? ', phone' : ''} and location
+            </li>
+            <li>
+              <CheckCircle2 size={14} /> Your headline, about, experience and skills
+            </li>
+            {p.careerPause && p.careerPauseNote && (
+              <li>
+                <CheckCircle2 size={14} /> Your career pause, in your words: “{p.careerPauseNote}”
+              </li>
+            )}
+            <li className={sharing ? '' : 'apply-share__private'}>
+              {sharing ? <HeartPulse size={14} /> : <Lock size={14} />}
+              {sharing
+                ? 'Your journey stage and support needs (you chose to share these with pledged employers)'
+                : p.disclosure === 'after-offer'
+                  ? 'Your health details stay private until you accept an offer'
+                  : 'No health information — that stays private'}
+            </li>
+          </ul>
+          <Link to="/profile?tab=journey" className="small">
+            Change what you share
+          </Link>
+        </div>
+
+        {completion < 50 && (
+          <p className="hint-box">
+            Your profile is {completion}% complete. You can absolutely apply now — adding a headline and skills just
+            helps {job.company} get to know you. <Link to="/profile">Update profile</Link>
+          </p>
+        )}
+
+        <Field label="A short note (optional)" hint="Why this role interests you. A couple of sentences is plenty.">
+          <textarea
+            rows={4}
+            maxLength={3000}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={`Hi ${job.company} team, I’d love to…`}
+          />
+        </Field>
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="row row--end">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
+            Not now
+          </button>
+          <button type="submit" className="btn btn--primary" disabled={busy}>
+            {busy ? 'Sending…' : 'Send application'} <ArrowRight size={16} />
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+function JobDetail({ job, application, onClose }: { job: Job; application?: Application; onClose?: () => void }) {
+  const { user, toggleSave } = useApp()
+  const [applying, setApplying] = useState(false)
   const saved = user?.saved.includes(job.id)
-  const applied = user?.applied.some((a) => a.jobId === job.id)
   const score = matchScore(job, user?.profile)
 
   return (
@@ -82,7 +211,8 @@ function JobDetail({ job, onClose }: { job: Job; onClose?: () => void }) {
       <div className="detail__body">
         <h2>{job.title}</h2>
         <p className="detail__company">
-          {job.company} {job.pledge && <BadgeCheck size={16} className="verified" />}
+          <Link to={`/companies/${job.companyId}`}>{job.company}</Link>
+          {job.pledge && <BadgeCheck size={16} className="verified" aria-label="Cancer-Aware Pledge" />}
         </p>
 
         {score !== null && (
@@ -140,17 +270,15 @@ function JobDetail({ job, onClose }: { job: Job; onClose?: () => void }) {
         </div>
 
         <div className="detail__actions">
-          <button className="btn btn--primary btn--block" disabled={applied} onClick={() => apply(job.id)}>
-            {applied ? (
-              <>
-                <CheckCircle2 size={16} /> Applied
-              </>
-            ) : (
-              <>
-                Apply now <ArrowRight size={16} />
-              </>
-            )}
-          </button>
+          {application ? (
+            <Link to={`/applications?app=${application.id}`} className="btn btn--soft btn--block">
+              <CheckCircle2 size={16} /> Applied · <StatusPill status={application.status} />
+            </Link>
+          ) : (
+            <button className="btn btn--primary btn--block" onClick={() => setApplying(true)}>
+              Apply now <ArrowRight size={16} />
+            </button>
+          )}
           <button
             className={`icon-btn icon-btn--outline ${saved ? 'is-on' : ''}`}
             onClick={() => toggleSave(job.id)}
@@ -159,7 +287,7 @@ function JobDetail({ job, onClose }: { job: Job; onClose?: () => void }) {
             {saved ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
           </button>
         </div>
-        <p className="muted small">Posted {job.postedDays === 1 ? '1 day' : `${job.postedDays} days`} ago</p>
+        <p className="muted small">Posted {timeAgo(job.createdAt)}</p>
 
         <h4>Description</h4>
         <p className="muted">{job.description}</p>
@@ -175,19 +303,25 @@ function JobDetail({ job, onClose }: { job: Job; onClose?: () => void }) {
             <li key={r}>{r}</li>
           ))}
         </ul>
+        <Link to={`/companies/${job.companyId}`} className="detail__more">
+          More about {job.company} <ArrowRight size={14} />
+        </Link>
       </div>
+      {applying && <ApplyModal job={job} onClose={() => setApplying(false)} />}
     </div>
   )
 }
 
 export default function Jobs() {
   const { user, toggleSave } = useApp()
+  const { data: jobs, loading } = useOpenJobs()
+  const { data: myApps } = useMyApplications(user?.id)
   const [params, setParams] = useSearchParams()
   const [q, setQ] = useState(params.get('q') ?? '')
   const [location, setLocation] = useState('')
   const [filters, setFilters] = useState<Filters>(EMPTY)
-  const [selectedId, setSelectedId] = useState<string>(JOBS[0]!.id)
-  const [drawer, setDrawer] = useState(false)
+  const selectedId = params.get('job')
+  const [drawer, setDrawer] = useState(!!selectedId)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const savedOnly = params.get('saved') === '1'
   const query = params.get('q') ?? ''
@@ -197,9 +331,9 @@ export default function Jobs() {
   const results = useMemo(() => {
     const term = query.toLowerCase()
     const loc = location.toLowerCase()
-    return JOBS.filter((j) => {
+    return jobs.filter((j) => {
       if (savedOnly && !user?.saved.includes(j.id)) return false
-      if (term && !`${j.title} ${j.company} ${j.func}`.toLowerCase().includes(term)) return false
+      if (term && !`${j.title} ${j.company} ${j.func} ${j.description}`.toLowerCase().includes(term)) return false
       if (loc && !j.location.toLowerCase().includes(loc)) return false
       if (filters.modes.length && !filters.modes.includes(j.mode)) return false
       if (filters.types.length && !filters.types.includes(j.type)) return false
@@ -209,12 +343,20 @@ export default function Jobs() {
       if (filters.pledgeOnly && !j.pledge) return false
       return true
     }).sort((a, b) => (matchScore(b, user?.profile) ?? 0) - (matchScore(a, user?.profile) ?? 0))
-  }, [query, location, filters, savedOnly, user])
+  }, [jobs, query, location, filters, savedOnly, user])
+
+  const appByJob = useMemo(() => new Map(myApps.map((a) => [a.jobId, a])), [myApps])
+  const select = (id: string) => {
+    const next = new URLSearchParams(params)
+    next.set('job', id)
+    setParams(next, { replace: true })
+    setDrawer(true)
+  }
 
   const selected = results.find((j) => j.id === selectedId) ?? results[0]
   const completion = user ? profileCompletion(user.profile) : 100
 
-  const submitSearch = (e: React.FormEvent) => {
+  const submitSearch = (e: FormEvent) => {
     e.preventDefault()
     const next = new URLSearchParams(params)
     if (q) next.set('q', q)
@@ -280,7 +422,7 @@ export default function Jobs() {
           </div>
           <div className="filters__group">
             <h4>Hours</h4>
-            <CheckList options={['Flexible', 'Reduced', 'Standard']} value={filters.hours} onChange={(v) => set('hours', v)} />
+            <CheckList options={[...JOB_HOURS]} value={filters.hours} onChange={(v) => set('hours', v)} />
           </div>
           <div className="filters__group">
             <h4>Job type</h4>
@@ -338,28 +480,52 @@ export default function Jobs() {
             </div>
           </div>
 
-          {results.length === 0 ? (
+          {loading ? (
+            <Spinner label="Finding roles for you…" />
+          ) : results.length === 0 ? (
             <div className="empty">
               <Search size={28} />
-              <h3>No jobs match yet</h3>
-              <p className="muted">Try removing a filter or two. New roles are added every day.</p>
-              <button className="btn btn--dark btn--sm" onClick={() => setFilters(EMPTY)}>
-                Clear filters
-              </button>
+              {jobs.length === 0 ? (
+                <>
+                  <h3>New roles are on their way</h3>
+                  <p className="muted">Employers are setting up right now. Their jobs will appear here as soon as they post.</p>
+                </>
+              ) : savedOnly && !user?.saved.length ? (
+                <>
+                  <h3>Nothing saved yet</h3>
+                  <p className="muted">Tap the bookmark on any job to keep it here for later.</p>
+                  <Link to="/jobs" className="btn btn--dark btn--sm">
+                    Browse jobs
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <h3>No jobs match yet</h3>
+                  <p className="muted">Try removing a filter or two. New roles are added every day.</p>
+                  <button className="btn btn--dark btn--sm" onClick={() => setFilters(EMPTY)}>
+                    Clear filters
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <div className="job-grid">
               {results.map((job) => {
                 const saved = user?.saved.includes(job.id)
                 const isSel = selected?.id === job.id
+                const app = appByJob.get(job.id)
                 return (
                   <article
                     key={job.id}
                     className={`job-card ${isSel ? 'job-card--active' : ''}`}
-                    onClick={() => {
-                      setSelectedId(job.id)
-                      setDrawer(true)
+                    onClick={() => select(job.id)}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+                      e.preventDefault()
+                      select(job.id)
                     }}
+                    tabIndex={0}
+                    aria-label={`${job.title} at ${job.company}`}
                   >
                     <div className="job-card__top">
                       <div className="job-card__head">
@@ -382,6 +548,7 @@ export default function Jobs() {
                       <div className="job-card__tags">
                         <span>{job.mode}</span>
                         <span>{job.type}</span>
+                        {app && <StatusPill status={app.status} />}
                       </div>
                       <div className="job-card__support">
                         <HeartPulse size={13} /> {job.supports[0]}
@@ -405,7 +572,7 @@ export default function Jobs() {
         {/* ───── Detail ───── */}
         {selected && (
           <aside className={`detail-panel ${drawer ? 'detail-panel--open' : ''}`}>
-            <JobDetail job={selected} onClose={() => setDrawer(false)} />
+            <JobDetail key={selected.id} job={selected} application={appByJob.get(selected.id)} onClose={() => setDrawer(false)} />
           </aside>
         )}
         {(drawer || filtersOpen) && (
