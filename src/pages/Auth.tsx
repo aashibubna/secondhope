@@ -3,7 +3,9 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Logo, Ribbon } from '../components/Brand'
 import { Field } from '../components/Fields'
+import { ShowErrors } from '../components/showErrors'
 import { useApp } from '../context/store'
+import { isEmail, isName, MESSAGES } from '../lib/validate'
 import type { Role } from '../types'
 
 function AuthLayout({ children, employer = false }: { children: ReactNode; employer?: boolean }) {
@@ -152,15 +154,18 @@ export function SignUp() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [agree, setAgree] = useState(false)
+  const [showErrors, setShowErrors] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    setShowErrors(true)
+    if (!isName(name) || !isEmail(email)) return setError('Please fix the highlighted fields.')
     if (!agree) return setError('Please accept the terms to continue.')
     setBusy(true)
     setError(null)
-    const err = await signUp(name, email, password, role)
+    const err = await signUp(name.trim(), email.trim(), password, role)
     setBusy(false)
     if (err) return setError(err)
     navigate(role === 'employer' ? '/employer/setup' : '/onboarding')
@@ -175,38 +180,40 @@ export function SignUp() {
           : 'Free forever for job seekers. It takes less than a minute.'}
       </p>
       <RolePicker value={role} onChange={(r) => setParams(r === 'employer' ? { role: r } : {}, { replace: true })} />
-      <form className="stack" onSubmit={submit}>
-        <Field label={role === 'employer' ? 'Your full name' : 'Full name'}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="name" required />
-        </Field>
-        <Field label={role === 'employer' ? 'Work email' : 'Email'}>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={role === 'employer' ? 'you@company.com' : 'you@example.com'}
-            autoComplete="email"
-            required
-          />
-        </Field>
-        <Field label="Password">
-          <PasswordInput value={password} onChange={setPassword} autoComplete="new-password" />
-        </Field>
-        <label className="checkbox">
-          <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-          <span>
-            I agree to the <a href="#">Terms</a> and <a href="#">Privacy Policy</a>
-          </span>
-        </label>
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
-        <button className="btn btn--primary btn--block" type="submit" disabled={busy}>
-          {busy ? 'Creating your account…' : 'Create account'} <ArrowRight size={16} />
-        </button>
-      </form>
+      <ShowErrors.Provider value={showErrors}>
+        <form className="stack" onSubmit={submit}>
+          <Field label={role === 'employer' ? 'Your full name' : 'Full name'} error={isName(name) ? undefined : MESSAGES.name}>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="name" required maxLength={80} />
+          </Field>
+          <Field label={role === 'employer' ? 'Work email' : 'Email'} error={isEmail(email) ? undefined : MESSAGES.email}>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder={role === 'employer' ? 'you@company.com' : 'you@example.com'}
+              autoComplete="email"
+              required
+            />
+          </Field>
+          <Field label="Password">
+            <PasswordInput value={password} onChange={setPassword} autoComplete="new-password" />
+          </Field>
+          <label className="checkbox">
+            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+            <span>
+              I agree to the <a href="#">Terms</a> and <a href="#">Privacy Policy</a>
+            </span>
+          </label>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          <button className="btn btn--primary btn--block" type="submit" disabled={busy}>
+            {busy ? 'Creating your account…' : 'Create account'} <ArrowRight size={16} />
+          </button>
+        </form>
+      </ShowErrors.Provider>
       <div className="divider">
         <span>or</span>
       </div>
@@ -230,7 +237,8 @@ export function Login() {
     e.preventDefault()
     setBusy(true)
     setError(null)
-    const err = await logIn(email, password)
+    if (!isEmail(email)) return setError(MESSAGES.email)
+    const err = await logIn(email.trim(), password)
     setBusy(false)
     // On success, GuestOnly redirects to the right home (or `state.next`).
     if (err) setError(err)
@@ -241,7 +249,7 @@ export function Login() {
       <h1 className="auth__title">Welcome back</h1>
       <p className="muted">Good to see you again. Let’s pick up where you left off.</p>
       <form className="stack" onSubmit={submit}>
-        <Field label="Email">
+        <Field label="Email" error={isEmail(email) ? undefined : MESSAGES.email}>
           <input
             type="email"
             value={email}
@@ -286,8 +294,10 @@ export function ForgotPassword() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (!isEmail(email)) return setError(MESSAGES.email)
     setBusy(true)
-    const err = await resetPassword(email)
+    setError(null)
+    const err = await resetPassword(email.trim())
     setBusy(false)
     // Don't reveal whether an account exists for this email.
     if (err && !err.includes('couldn’t find')) return setError(err)
@@ -315,7 +325,7 @@ export function ForgotPassword() {
           <h1 className="auth__title">Reset your password</h1>
           <p className="muted">It happens to everyone. Enter your email and we’ll send you a reset link.</p>
           <form className="stack" onSubmit={submit}>
-            <Field label="Email">
+            <Field label="Email" error={isEmail(email) ? undefined : MESSAGES.email}>
               <input
                 type="email"
                 value={email}

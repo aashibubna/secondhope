@@ -1,6 +1,6 @@
 import { Briefcase, HeartPulse, Link2, Lock, Mail, MapPin, Phone } from 'lucide-react'
 import { JOURNEY_STAGES } from '../data/options'
-import type { ApplicantSnapshot, Disclosed } from '../types'
+import type { Answer, ApplicantSnapshot, Disclosed } from '../types'
 import { Avatar } from './Brand'
 
 /**
@@ -11,10 +11,12 @@ export default function ApplicantView({
   applicant: a,
   disclosed,
   coverNote,
+  answers = [],
 }: {
   applicant: ApplicantSnapshot
   disclosed: Disclosed | null
   coverNote?: string
+  answers?: Answer[]
 }) {
   const stage = disclosed && JOURNEY_STAGES.find((s) => s.value === disclosed.journeyStage)
   return (
@@ -55,6 +57,20 @@ export default function ApplicantView({
         <section>
           <h4>Note from {a.name.split(' ')[0]}</h4>
           <p className="applicant__note">{coverNote}</p>
+        </section>
+      )}
+
+      {answers.length > 0 && (
+        <section>
+          <h4>Screening answers</h4>
+          <dl className="applicant__answers">
+            {answers.map((x, i) => (
+              <div key={i}>
+                <dt>{x.question}</dt>
+                <dd>{x.answer}</dd>
+              </div>
+            ))}
+          </dl>
         </section>
       )}
 

@@ -188,7 +188,7 @@ export default function Dashboard() {
                           {a.jobTitle} · {timeAgo(a.createdAt)}
                         </small>
                       </span>
-                      <StatusPill status={a.status} employer />
+                      <StatusPill status={a.status} employer app={a} />
                     </Link>
                   </li>
                 ))}

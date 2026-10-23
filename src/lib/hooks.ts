@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { Application, Company, Job } from '../types'
+import type { Application, Company, Job, Message } from '../types'
 import {
   watchCompany,
   watchCompanyApplications,
   watchCompanyJobs,
+  watchMessages,
   watchMyApplications,
   watchOpenJobs,
 } from './db'
@@ -47,3 +48,5 @@ export const useMyApplications = (uid: string | undefined) =>
 
 export const useCompanyApplications = (id: string | undefined) =>
   useLive<Application[]>(id, NONE, (k, set) => watchCompanyApplications(k, (a) => set(byNewest(a))))
+
+export const useMessages = (appId: string | undefined) => useLive<Message[]>(appId, NONE, watchMessages)

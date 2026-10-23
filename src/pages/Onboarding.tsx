@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { Profile } from '../types'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '../components/Brand'
+import { ShowErrors } from '../components/showErrors'
 import {
   AboutSection,
   ExperienceSection,
@@ -12,6 +13,7 @@ import {
   type SectionProps,
 } from '../components/ProfileSections'
 import { useApp } from '../context/store'
+import { cleanProfile, hasErrors, profileErrors } from '../lib/validate'
 
 const STEPS: { label: string; title: string; subtitle: string; Component: (p: SectionProps) => React.JSX.Element }[] = [
   {
@@ -53,17 +55,26 @@ export default function Onboarding() {
   // Edits stay local and are saved at each step, so typing never waits on the network.
   const [draft, setDraft] = useState<Profile | null>(user?.profile ?? null)
   const [busy, setBusy] = useState(false)
+  const [showErrors, setShowErrors] = useState(false)
 
   if (!user || !draft) return null
   const { title, subtitle, Component } = STEPS[step]!
   const last = step === STEPS.length - 1
+  const invalid = hasErrors(profileErrors(draft))
 
-  const save = () => updateProfile(draft).catch(console.error)
+  const save = () => updateProfile(cleanProfile(draft)).catch(console.error)
+  /** Nothing is saved while a field on this step needs fixing. */
+  const blocked = () => {
+    setShowErrors(invalid)
+    return invalid
+  }
   const goTo = (i: number) => {
+    if (blocked()) return
     save()
     setStep(i)
   }
   const finish = () => {
+    if (blocked()) return
     setBusy(true)
     // Firestore applies writes locally first, so there's no need to wait for the server
     // (which would hang on a flaky connection).
@@ -115,7 +126,14 @@ export default function Onboarding() {
           <h1 className="onboard__title">{title}</h1>
           <p className="muted">{subtitle}</p>
           <div className="onboard__form">
-            <Component profile={draft} set={(patch) => setDraft((d) => ({ ...d!, ...patch }))} />
+            <ShowErrors.Provider value={showErrors}>
+              <Component key={step} profile={draft} set={(patch) => setDraft((d) => ({ ...d!, ...patch }))} />
+            </ShowErrors.Provider>
+            {showErrors && invalid && (
+              <p className="form-error" role="alert">
+                Please fix the highlighted field before moving on.
+              </p>
+            )}
           </div>
         </div>
 

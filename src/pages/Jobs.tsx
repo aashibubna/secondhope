@@ -21,9 +21,10 @@ import { Link, useSearchParams } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import { CompanyLogo } from '../components/Brand'
 import { Field, Toggle } from '../components/Fields'
+import { ShowErrors } from '../components/showErrors'
 import { Modal, Spinner, StatusPill } from '../components/Status'
 import { friendlyError, matchScore, profileCompletion, timeAgo, useApp } from '../context/store'
-import { FUNCTIONS, JOB_HOURS, JOB_TYPES, SUPPORTS, WORK_MODES } from '../data/options'
+import { FUNCTIONS, JOB_HOURS, JOB_TYPES, OTHER, SUPPORTS, WORK_MODES } from '../data/options'
 import { apply, willDisclose } from '../lib/db'
 import { useMyApplications, useOpenJobs } from '../lib/hooks'
 import type { Application, Job } from '../types'
@@ -67,6 +68,8 @@ function CheckList({
 function ApplyModal({ job, onClose }: { job: Job; onClose: () => void }) {
   const { user } = useApp()
   const [note, setNote] = useState('')
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [showErrors, setShowErrors] = useState(false)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -74,13 +77,16 @@ function ApplyModal({ job, onClose }: { job: Job; onClose: () => void }) {
   const p = user.profile
   const completion = profileCompletion(p)
   const sharing = willDisclose(user, job)
+  const missing = job.questions.filter((q) => q.required && !answers[q.id]?.trim())
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    setShowErrors(true)
+    if (missing.length) return setError('Please answer the required questions.')
     setBusy(true)
     setError(null)
     try {
-      await apply(user, job, note)
+      await apply(user, job, note, job.questions.map((q) => ({ question: q.text, answer: answers[q.id] ?? '' })))
       setDone(true)
     } catch (err) {
       console.error(err)
@@ -160,6 +166,29 @@ function ApplyModal({ job, onClose }: { job: Job; onClose: () => void }) {
             Your profile is {completion}% complete. You can absolutely apply now — adding a headline and skills just
             helps {job.company} get to know you. <Link to="/profile">Update profile</Link>
           </p>
+        )}
+
+        {job.questions.length > 0 && (
+          <ShowErrors.Provider value={showErrors}>
+            <div className="stack">
+              <h4>A few questions from {job.company}</h4>
+              {job.questions.map((q) => (
+                <Field
+                  key={q.id}
+                  label={q.required ? q.text : `${q.text} (optional)`}
+                  error={missing.includes(q) ? 'This question needs an answer.' : undefined}
+                >
+                  <textarea
+                    rows={2}
+                    maxLength={1000}
+                    value={answers[q.id] ?? ''}
+                    required={q.required}
+                    onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+                  />
+                </Field>
+              ))}
+            </div>
+          </ShowErrors.Provider>
         )}
 
         <Field label="A short note (optional)" hint="Why this role interests you. A couple of sentences is plenty.">
@@ -305,6 +334,12 @@ function JobDetail({ job, application, onClose }: { job: Job; application?: Appl
             <li key={r}>{r}</li>
           ))}
         </ul>
+        <h4>Hiring process</h4>
+        <ol className="process">
+          {['Résumé shortlisting', ...job.rounds, 'Offer'].map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ol>
         <Link to={`/companies/${job.companyId}`} className="detail__more">
           More about {job.company} <ArrowRight size={14} />
         </Link>
@@ -339,7 +374,7 @@ export default function Jobs() {
       if (loc && !j.location.toLowerCase().includes(loc)) return false
       if (filters.modes.length && !filters.modes.includes(j.mode)) return false
       if (filters.types.length && !filters.types.includes(j.type)) return false
-      if (filters.funcs.length && !filters.funcs.includes(j.func)) return false
+      if (filters.funcs.length && !filters.funcs.includes(FUNCTIONS.includes(j.func) ? j.func : OTHER)) return false
       if (filters.hours.length && !filters.hours.includes(j.hours)) return false
       if (filters.supports.length && !filters.supports.every((s) => j.supports.includes(s))) return false
       if (filters.pledgeOnly && !j.pledge) return false
@@ -432,7 +467,7 @@ export default function Jobs() {
           </div>
           <div className="filters__group">
             <h4>Job function</h4>
-            <CheckList options={FUNCTIONS} value={filters.funcs} onChange={(v) => set('funcs', v)} />
+            <CheckList options={[...FUNCTIONS, OTHER]} value={filters.funcs} onChange={(v) => set('funcs', v)} />
           </div>
         </aside>
 

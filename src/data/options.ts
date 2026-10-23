@@ -48,6 +48,28 @@ export const FUNCTIONS = [
   'Sales',
 ]
 
+/** Lets people type their own value next to a fixed list. */
+export const OTHER = 'Other'
+
+export const SALARY_UNITS = [
+  { value: '', label: '₹ (exact)' },
+  { value: 'K', label: 'Thousand' },
+  { value: 'L', label: 'Lakh' },
+  { value: 'Cr', label: 'Crore' },
+] as const
+
+export const SALARY_PERIODS = [
+  { value: 'year', label: 'per year' },
+  { value: 'month', label: 'per month' },
+  { value: 'hour', label: 'per hour' },
+] as const
+
+/** Rounds a new job starts with; employers can rename, add or remove them. */
+export const DEFAULT_ROUNDS = ['Phone screen', 'Interview']
+
+export const MAX_QUESTIONS = 10
+export const MAX_ROUNDS = 10
+
 export const SUPPORTS = [
   'Flexible hours',
   'Treatment leave',
@@ -81,7 +103,7 @@ export const YEARS_EXPERIENCE = ['Less than 1 year', '1–3 years', '3–5 years
 export const APP_STATUS = {
   applied: { label: 'Applied', employerLabel: 'New', tone: 'neutral', hint: 'Your application has been sent.' },
   reviewing: { label: 'In review', employerLabel: 'Reviewing', tone: 'info', hint: 'The team is reading your application.' },
-  interview: { label: 'Interview', employerLabel: 'Interview', tone: 'accent', hint: 'They would like to talk with you.' },
+  interview: { label: 'Interview', employerLabel: 'Interview', tone: 'accent', hint: 'You’ve been shortlisted — they would like to talk with you.' },
   offer: { label: 'Offer', employerLabel: 'Offer sent', tone: 'good', hint: 'You have an offer! Take your time to decide.' },
   hired: { label: 'Accepted', employerLabel: 'Hired', tone: 'good', hint: 'Congratulations on your new role.' },
   'not-selected': {
@@ -96,8 +118,8 @@ export const APP_STATUS = {
 /** The stages a candidate moves through, in order. */
 export const PIPELINE = ['applied', 'reviewing', 'interview', 'offer', 'hired'] as const
 
-/** Statuses an employer can set. */
-export const EMPLOYER_STATUSES = ['applied', 'reviewing', 'interview', 'offer', 'not-selected'] as const
+/** Statuses after résumé shortlisting — the stages where messaging is open. */
+export const SHORTLISTED = ['interview', 'offer', 'hired'] as const
 
 export const INDUSTRIES = [
   'Healthcare',

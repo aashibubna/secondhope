@@ -8,6 +8,7 @@ import { Modal } from '../components/Status'
 import { friendlyError, useApp } from '../context/store'
 import { loadComfort, saveComfort, type Comfort } from '../lib/comfort'
 import { updateUser } from '../lib/db'
+import { isName, MESSAGES } from '../lib/validate'
 
 export default function Settings() {
   const { user, authUser, resetPassword, deleteAccount } = useApp()
@@ -35,7 +36,7 @@ export default function Settings() {
   const saveName = (e: FormEvent) => {
     e.preventDefault()
     const n = name.trim()
-    if (!n) return
+    if (!isName(n)) return
     updateUser(user.id, { name: n }).catch(console.error)
     updateAuthProfile(authUser, { displayName: n }).catch(console.error)
     notify('Your name has been updated.')
@@ -108,14 +109,14 @@ export default function Settings() {
         <section className="card">
           <h2>Account</h2>
           <form className="form-grid" onSubmit={saveName}>
-            <Field label="Name">
-              <input value={name} onChange={(e) => setName(e.target.value)} required />
+            <Field label="Name" error={isName(name) ? undefined : MESSAGES.name}>
+              <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} autoComplete="name" />
             </Field>
             <Field label="Email">
               <input value={user.email} disabled />
             </Field>
             <div className="form-grid__full row row--end">
-              <button className="btn btn--primary btn--sm" disabled={name.trim() === user.name || !name.trim()}>
+              <button className="btn btn--primary btn--sm" disabled={name.trim() === user.name || !isName(name)}>
                 Save name
               </button>
             </div>

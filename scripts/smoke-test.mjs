@@ -7,6 +7,7 @@ import {
   arrayUnion,
   collection,
   connectFirestoreEmulator,
+  addDoc,
   doc,
   getDoc,
   getDocs,
@@ -74,8 +75,9 @@ await deny('employer edits someone else’s company', () => updateDoc(doc(emp2.d
 await setDoc(doc(emp2.db, 'companies', emp2Id), { ...company, ownerUid: emp2Id, name: 'Beta', pledge: false })
 
 console.log('\nJobs')
-const job = { companyId: empId, company: 'Acme', logo: company.logo, pledge: true, title: 'Writer', location: 'Remote', mode: 'Remote', type: 'Full-time', hours: 'Flexible', salary: '', func: 'Writing & Content', supports: [], description: 'Write.', responsibilities: [], requirements: [], status: 'open', createdAt: now, updatedAt: now }
+const job = { companyId: empId, company: 'Acme', logo: company.logo, pledge: true, title: 'Writer', location: 'Remote', mode: 'Remote', type: 'Full-time', hours: 'Flexible', salary: '₹6L – ₹9L / year', pay: { min: 6, max: 9, unit: 'L', period: 'year' }, func: 'Writing & Content', supports: [], description: 'Write.', responsibilities: [], requirements: [], questions: [{ id: 'q1', text: 'Portfolio link?', required: true }], rounds: ['Phone screen', 'Writing task'], status: 'open', createdAt: now, updatedAt: now }
 const jobId = `job-${stamp}`
+await deny('employer posts a job with a max salary below the min', () => setDoc(doc(emp.db, 'jobs', `bad-${stamp}`), { ...job, pay: { ...job.pay, max: 2 } }))
 await check('employer posts a job', () => setDoc(doc(emp.db, 'jobs', jobId), job))
 await deny('unpledged employer fakes the pledge badge', () => setDoc(doc(emp2.db, 'jobs', `fake-${stamp}`), { ...job, companyId: emp2Id, company: 'Beta' }))
 await deny('employer posts under another company', () => setDoc(doc(emp2.db, 'jobs', `x-${stamp}`), job))
@@ -85,7 +87,7 @@ await deny('seeker reads a closed job', () => getDoc(doc(seeker.db, 'jobs', `clo
 
 console.log('\nApplications')
 const appId = `${jobId}_${seekerId}`
-const app = { jobId, seekerUid: seekerId, companyId: empId, jobTitle: 'Writer', companyName: 'Acme', logo: company.logo, status: 'applied', coverNote: 'Hi', applicant: { name: 'seeker' }, disclosure: 'open', disclosed: { journeyStage: 'remission', supportNeeds: [] }, employerMessage: '', updatedBy: 'seeker', history: [{ status: 'applied', at: now }], createdAt: now, updatedAt: now }
+const app = { jobId, seekerUid: seekerId, companyId: empId, jobTitle: 'Writer', companyName: 'Acme', logo: company.logo, status: 'applied', coverNote: 'Hi', applicant: { name: 'seeker' }, disclosure: 'open', disclosed: { journeyStage: 'remission', supportNeeds: [] }, employerMessage: '', updatedBy: 'seeker', round: 0, rounds: job.rounds, answers: [{ question: 'Portfolio link?', answer: 'me.dev' }], history: [{ status: 'applied', at: now }], lastMessageAt: 0, lastMessageBy: '', createdAt: now, updatedAt: now }
 await deny('employer applies to a job', () => setDoc(doc(emp.db, 'applications', `${jobId}_${empId}`), { ...app, seekerUid: empId }))
 await deny('seeker applies with wrong companyId', () => setDoc(doc(seeker.db, 'applications', appId), { ...app, companyId: emp2Id }))
 await deny('seeker applies as already "offer"', () => setDoc(doc(seeker.db, 'applications', appId), { ...app, status: 'offer' }))
@@ -97,7 +99,18 @@ await deny('other seeker reads it', () => getDoc(doc(other.db, 'applications', a
 await deny('seeker promotes themselves to "offer"', () => updateDoc(doc(seeker.db, 'applications', appId), { status: 'offer', updatedBy: 'seeker', updatedAt: now }))
 await deny('employer marks as "hired" (only the seeker can accept)', () => updateDoc(doc(emp.db, 'applications', appId), { status: 'hired', updatedBy: 'employer', updatedAt: now }))
 await deny('employer edits the applicant snapshot', () => updateDoc(doc(emp.db, 'applications', appId), { coverNote: 'changed', updatedBy: 'employer', updatedAt: now }))
-await check('employer moves to interview with a message', () => updateDoc(doc(emp.db, 'applications', appId), { status: 'interview', employerMessage: 'Let’s talk!', updatedBy: 'employer', updatedAt: now, history: arrayUnion({ status: 'interview', at: now }) }))
+const msgs = (c) => collection(c.db, 'applications', appId, 'messages')
+const msg = (from, uid) => ({ from, uid, text: 'Hello', at: now })
+await deny('employer messages before shortlisting', () => addDoc(msgs(emp), msg('employer', empId)))
+await check('employer shortlists for round 1 with a message', () => updateDoc(doc(emp.db, 'applications', appId), { status: 'interview', round: 0, rounds: job.rounds, employerMessage: 'Let’s talk!', updatedBy: 'employer', updatedAt: now, history: arrayUnion({ status: 'interview', at: now, round: 0 }) }))
+await check('employer moves to round 2', () => updateDoc(doc(emp.db, 'applications', appId), { status: 'interview', round: 1, updatedBy: 'employer', updatedAt: now, history: arrayUnion({ status: 'interview', at: now, round: 1 }) }))
+await check('employer messages the candidate', () => addDoc(msgs(emp), msg('employer', empId)))
+await check('employer stamps the last message', () => updateDoc(doc(emp.db, 'applications', appId), { lastMessageAt: now, lastMessageBy: 'employer' }))
+await check('seeker replies', () => addDoc(msgs(seeker), msg('seeker', seekerId)))
+await deny('seeker sends a message as the employer', () => addDoc(msgs(seeker), msg('employer', seekerId)))
+await deny('seeker stamps the last message as the employer', () => updateDoc(doc(seeker.db, 'applications', appId), { lastMessageAt: now, lastMessageBy: 'employer' }))
+await check('seeker reads the thread', () => getDocs(msgs(seeker)))
+await deny('other employer reads the thread', () => getDocs(msgs(emp2)))
 await check('employer sends an offer', () => updateDoc(doc(emp.db, 'applications', appId), { status: 'offer', updatedBy: 'employer', updatedAt: now }))
 await check('seeker accepts the offer', () => updateDoc(doc(seeker.db, 'applications', appId), { status: 'hired', updatedBy: 'seeker', updatedAt: now }))
 await deny('employer changes a hired application', () => updateDoc(doc(emp.db, 'applications', appId), { status: 'not-selected', updatedBy: 'employer', updatedAt: now }))

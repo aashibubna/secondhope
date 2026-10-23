@@ -1,7 +1,8 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { APP_STATUS } from '../data/options'
-import type { AppStatus } from '../types'
+import { currentLabel, reachedIndex, roundsOf, stageLabels } from '../lib/pipeline'
+import type { Application, AppStatus } from '../types'
 import { Ribbon } from './Brand'
 
 export function Splash() {
@@ -24,9 +25,28 @@ export function Spinner({ label = 'Loading…' }: { label?: string }) {
   )
 }
 
-export function StatusPill({ status, employer = false }: { status: AppStatus; employer?: boolean }) {
+export function StatusPill({ status, employer = false, app }: { status: AppStatus; employer?: boolean; app?: Application }) {
   const s = APP_STATUS[status]
-  return <span className={`status status--${s.tone}`}>{employer ? s.employerLabel : s.label}</span>
+  // While interviewing, name the actual round ("Phone screen") instead of the generic stage.
+  const round = app && status === 'interview' ? currentLabel(app, employer) : null
+  return <span className={`status status--${s.tone}`}>{round ?? (employer ? s.employerLabel : s.label)}</span>
+}
+
+/** Every stage of this application's hiring process, with how far it has got. */
+export function StageTracker({ app, employer = false }: { app: Application; employer?: boolean }) {
+  const ended = app.status === 'not-selected' || app.status === 'withdrawn'
+  const labels = stageLabels(roundsOf(app), employer)
+  const reached = reachedIndex(app)
+  return (
+    <ol className={`tracker ${ended ? 'tracker--ended' : ''}`} style={{ ['--steps' as string]: labels.length }} aria-label="Application progress">
+      {labels.map((label, i) => (
+        <li key={i} className={i < reached ? 'is-done' : i === reached ? 'is-current' : ''} aria-current={i === reached ? 'step' : undefined}>
+          <span className="tracker__dot">{i < reached && <Check size={10} strokeWidth={3} />}</span>
+          <span className="tracker__label">{label}</span>
+        </li>
+      ))}
+    </ol>
+  )
 }
 
 export function Modal({

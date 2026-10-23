@@ -82,7 +82,7 @@ export function matchScore(job: Job, p: Profile | undefined) {
   if (!p) return null
   let score = 55
   if (p.workModes.includes(job.mode)) score += 12
-  if (p.functions.includes(job.func)) score += 14
+  if (p.functions.includes(job.func) || (!!p.functionsOther && p.functionsOther.toLowerCase() === job.func.toLowerCase())) score += 14
   if (p.jobTypes.includes(job.type)) score += 6
   const overlap = p.supportNeeds.filter((s) => job.supports.includes(s)).length
   score += Math.min(overlap * 5, 15)

@@ -1,34 +1,18 @@
-import { ArrowRight, Check, Heart, MessageSquareText, PartyPopper } from 'lucide-react'
+import { ArrowRight, Heart, MessageSquareText, MessagesSquare, PartyPopper } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import { CompanyLogo } from '../components/Brand'
-import { Modal, Spinner, StatusPill } from '../components/Status'
+import { Modal, Spinner, StageTracker, StatusPill } from '../components/Status'
+import Thread from '../components/Thread'
 import { friendlyError, shortDate, useApp } from '../context/store'
-import { APP_STATUS, PIPELINE } from '../data/options'
+import { APP_STATUS } from '../data/options'
 import { acceptOffer, withdraw } from '../lib/db'
 import { useMyApplications } from '../lib/hooks'
+import { canMessage, currentLabel } from '../lib/pipeline'
 import type { Application } from '../types'
 
 const ACTIVE = new Set(['applied', 'reviewing', 'interview', 'offer'])
-
-function Progress({ app }: { app: Application }) {
-  const ended = app.status === 'not-selected' || app.status === 'withdrawn'
-  // For ended applications, show how far it got before it stopped.
-  const reached = ended
-    ? Math.max(0, ...app.history.map((h) => PIPELINE.indexOf(h.status as (typeof PIPELINE)[number])))
-    : PIPELINE.indexOf(app.status as (typeof PIPELINE)[number])
-  return (
-    <ol className={`tracker ${ended ? 'tracker--ended' : ''}`} aria-label="Application progress">
-      {PIPELINE.map((s, i) => (
-        <li key={s} className={i < reached ? 'is-done' : i === reached ? 'is-current' : ''}>
-          <span className="tracker__dot">{i < reached && <Check size={10} strokeWidth={3} />}</span>
-          <span className="tracker__label">{APP_STATUS[s].label}</span>
-        </li>
-      ))}
-    </ol>
-  )
-}
 
 type Confirm = { kind: 'withdraw' | 'accept'; app: Application }
 
@@ -38,6 +22,9 @@ function AppCard({ app, focused, onAction }: { app: Application; focused: boolea
     if (focused) ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [focused])
   const active = ACTIVE.has(app.status)
+  const hasThread = canMessage(app.status) || app.lastMessageAt > 0
+  const unread = app.lastMessageBy === 'employer'
+  const [chat, setChat] = useState(focused && unread)
 
   return (
     <article ref={ref} className={`app-card ${focused ? 'app-card--focus' : ''} ${active ? '' : 'app-card--past'}`}>
@@ -49,11 +36,14 @@ function AppCard({ app, focused, onAction }: { app: Application; focused: boolea
             <Link to={`/companies/${app.companyId}`}>{app.companyName}</Link> · Applied {shortDate(app.createdAt)}
           </p>
         </div>
-        <StatusPill status={app.status} />
+        <StatusPill status={app.status} app={app} />
       </div>
 
-      <Progress app={app} />
-      <p className="app-card__hint small">{APP_STATUS[app.status].hint}</p>
+      <StageTracker app={app} />
+      <p className="app-card__hint small">
+        {app.status === 'interview' ? `You’re in the ${currentLabel(app)} round. ` : ''}
+        {APP_STATUS[app.status].hint}
+      </p>
 
       {app.employerMessage && (
         <div className="message">
@@ -65,10 +55,18 @@ function AppCard({ app, focused, onAction }: { app: Application; focused: boolea
         </div>
       )}
 
+      {chat && hasThread && <Thread app={app} as="seeker" />}
+
       <div className="app-card__actions">
         <Link to={`/jobs?job=${app.jobId}`} className="btn btn--text btn--sm">
           View job
         </Link>
+        {hasThread && (
+          <button className="btn btn--ghost btn--sm" onClick={() => setChat((c) => !c)} aria-expanded={chat}>
+            <MessagesSquare size={14} /> {chat ? 'Hide messages' : 'Messages'}
+            {!chat && unread && <span className="dot dot--inline" aria-label="New message" />}
+          </button>
+        )}
         {app.status === 'offer' && (
           <button className="btn btn--primary btn--sm" onClick={() => onAction({ kind: 'accept', app })}>
             <PartyPopper size={14} /> Accept offer

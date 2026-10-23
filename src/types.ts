@@ -21,6 +21,8 @@ export interface Profile {
   hours: string
   jobTypes: string[]
   functions: string[]
+  /** Free-text interest, used when "Other" is in `functions`. */
+  functionsOther: string
   supportNeeds: string[]
   accommodationNotes: string
   skills: string[]
@@ -70,6 +72,24 @@ export interface Company {
 
 export type JobStatus = 'open' | 'closed'
 
+/** '' = rupees as typed, K = thousand, L = lakh, Cr = crore. */
+export type SalaryUnit = '' | 'K' | 'L' | 'Cr'
+export type SalaryPeriod = 'year' | 'month' | 'hour'
+
+export interface Pay {
+  min: number
+  max: number | null
+  unit: SalaryUnit
+  period: SalaryPeriod
+}
+
+/** A screening question the employer adds to a job. */
+export interface Question {
+  id: string
+  text: string
+  required: boolean
+}
+
 export interface Job {
   id: string
   companyId: string
@@ -82,12 +102,17 @@ export interface Job {
   mode: 'Remote' | 'Hybrid' | 'On-site'
   type: 'Full-time' | 'Part-time' | 'Contract' | 'Freelance'
   hours: 'Standard' | 'Flexible' | 'Reduced'
+  /** Display text, derived from `pay` when it is set. */
   salary: string
+  pay: Pay | null
   func: string
   supports: string[]
   description: string
   responsibilities: string[]
   requirements: string[]
+  questions: Question[]
+  /** Hiring rounds after résumé shortlisting, in order, e.g. ["Phone screen", "Technical interview"]. */
+  rounds: string[]
   status: JobStatus
   createdAt: number
   updatedAt: number
@@ -128,6 +153,11 @@ export interface Disclosed {
   supportNeeds: string[]
 }
 
+export interface Answer {
+  question: string
+  answer: string
+}
+
 /** `applications/{jobId}_{seekerUid}` */
 export interface Application {
   id: string
@@ -139,14 +169,30 @@ export interface Application {
   logo: Logo
   status: AppStatus
   coverNote: string
+  answers: Answer[]
   applicant: ApplicantSnapshot
   disclosure: Disclosure
   disclosed: Disclosed | null
   employerMessage: string
   updatedBy: 'seeker' | 'employer'
-  history: { status: AppStatus; at: number }[]
+  /** While status is 'interview': index into `rounds`. */
+  round: number
+  /** The job's rounds, copied by the employer each time they move the candidate. */
+  rounds: string[]
+  history: { status: AppStatus; at: number; round?: number }[]
+  lastMessageAt: number
+  lastMessageBy: 'seeker' | 'employer' | ''
   createdAt: number
   updatedAt: number
+}
+
+/** `applications/{id}/messages/{msgId}` — opens once the candidate is past résumé shortlisting. */
+export interface Message {
+  id: string
+  from: 'seeker' | 'employer'
+  uid: string
+  text: string
+  at: number
 }
 
 export const emptyProfile: Profile = {
@@ -160,6 +206,7 @@ export const emptyProfile: Profile = {
   hours: '',
   jobTypes: [],
   functions: [],
+  functionsOther: '',
   supportNeeds: [],
   accommodationNotes: '',
   skills: [],

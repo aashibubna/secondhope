@@ -1,20 +1,33 @@
 import { Check, Plus, X } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useContext, useState, type ReactNode } from 'react'
+import { ShowErrors } from './showErrors'
 
 export function Field({
   label,
   hint,
+  error,
   children,
 }: {
   label: string
   hint?: string
+  /** Shown once the person has left the field (or tried to submit). */
+  error?: string
   children: ReactNode
 }) {
+  const [touched, setTouched] = useState(false)
+  const showAll = useContext(ShowErrors)
+  const shown = error && (touched || showAll) ? error : null
   return (
-    <label className="field">
+    <label className={`field ${shown ? 'field--invalid' : ''}`} onBlur={() => setTouched(true)}>
       <span className="field__label">{label}</span>
       {children}
-      {hint && <span className="field__hint">{hint}</span>}
+      {shown ? (
+        <span className="field__error" role="alert">
+          {shown}
+        </span>
+      ) : (
+        hint && <span className="field__hint">{hint}</span>
+      )}
     </label>
   )
 }

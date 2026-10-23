@@ -24,10 +24,12 @@ import {
   SupportSection,
   type SectionProps,
 } from '../components/ProfileSections'
+import { ShowErrors } from '../components/showErrors'
 import { Modal } from '../components/Status'
 import { profileCompletion, useApp } from '../context/store'
 import { DISCLOSURE_OPTIONS, JOURNEY_STAGES } from '../data/options'
 import { disclosedFor, snapshotOf } from '../lib/db'
+import { cleanProfile, hasErrors, profileErrors } from '../lib/validate'
 import type { Profile as ProfileT } from '../types'
 
 const SECTIONS: {
@@ -73,7 +75,9 @@ function SectionEditor({ id }: { id: string }) {
   const section = SECTIONS.find((s) => s.id === id)!
   const [draft, setDraft] = useState<ProfileT>(user!.profile)
   const [saved, setSaved] = useState(false)
+  const [showErrors, setShowErrors] = useState(false)
   const dirty = JSON.stringify(draft) !== JSON.stringify(user!.profile)
+  const invalid = hasErrors(profileErrors(draft))
 
   return (
     <div className="card">
@@ -88,22 +92,40 @@ function SectionEditor({ id }: { id: string }) {
           </span>
         )}
       </div>
-      <section.Component
-        profile={draft}
-        set={(patch) => {
-          setSaved(false)
-          setDraft((d) => ({ ...d, ...patch }))
-        }}
-      />
+      <ShowErrors.Provider value={showErrors}>
+        <section.Component
+          profile={draft}
+          set={(patch) => {
+            setSaved(false)
+            setDraft((d) => ({ ...d, ...patch }))
+          }}
+        />
+      </ShowErrors.Provider>
+      {showErrors && invalid && (
+        <p className="form-error" role="alert">
+          Please fix the highlighted field before saving.
+        </p>
+      )}
       <div className="card__foot">
-        <button className="btn btn--ghost" disabled={!dirty} onClick={() => setDraft(user!.profile)}>
+        <button
+          className="btn btn--ghost"
+          disabled={!dirty}
+          onClick={() => {
+            setShowErrors(false)
+            setDraft(user!.profile)
+          }}
+        >
           Discard
         </button>
         <button
           className="btn btn--primary"
           disabled={!dirty}
           onClick={() => {
-            updateProfile(draft)
+            setShowErrors(invalid)
+            if (invalid) return
+            const clean = cleanProfile(draft)
+            updateProfile(clean)
+            setDraft(clean)
             setSaved(true)
           }}
         >

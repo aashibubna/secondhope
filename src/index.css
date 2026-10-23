@@ -374,6 +374,11 @@ code {
   color: var(--ink);
   text-decoration: none;
 }
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+}
 .icon-btn--light {
   background: rgba(255, 255, 255, 0.9);
 }
@@ -487,6 +492,22 @@ input[type='checkbox'] {
   font-size: 0.8125rem;
   color: var(--muted);
 }
+.field__error {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--danger);
+}
+.field--invalid input,
+.field--invalid select,
+.field--invalid textarea,
+.field--invalid input:hover,
+.field--invalid input:focus {
+  border-color: var(--danger);
+}
+.field--invalid input:focus,
+.field--invalid textarea:focus {
+  box-shadow: 0 0 0 3px rgba(192, 48, 74, 0.2);
+}
 
 .form-grid {
   display: grid;
@@ -507,6 +528,264 @@ input[type='checkbox'] {
 .sub-label {
   font-size: 0.9375rem;
   margin-bottom: 0.65rem;
+}
+.salary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.4rem 0;
+}
+.salary .field__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .salary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.editable-list {
+  margin-top: 1rem;
+  gap: 0.9rem;
+}
+.editable-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: 0.75rem;
+}
+.editable-row__check {
+  min-height: 2.9rem;
+  align-items: center;
+}
+.editable-row .icon-btn {
+  margin-bottom: 0.35rem;
+}
+.add-btn {
+  align-self: flex-start;
+}
+.rounds {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.rounds li {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+}
+.rounds__fixed {
+  align-items: center !important;
+  grid-template-columns: 2rem 1fr !important;
+  font-weight: 600;
+  color: var(--muted);
+}
+.rounds__num {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.45rem;
+  border-radius: 50%;
+  background: var(--brand-50);
+  color: var(--brand);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.rounds__fixed .rounds__num {
+  margin-bottom: 0;
+  background: var(--soft);
+  color: var(--muted);
+}
+.rounds__actions {
+  display: flex;
+  gap: 0.15rem;
+  margin-bottom: 0.35rem;
+}
+.process {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.process li {
+  counter-increment: step;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: var(--soft);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.process li::before {
+  content: counter(step) '. ';
+  color: var(--brand);
+}
+.applicant__answers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+}
+.applicant__answers dt {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.applicant__answers dd {
+  margin: 0.15rem 0 0;
+  white-space: pre-line;
+}
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.1rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.thread h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9375rem;
+}
+.thread h4 svg {
+  color: var(--brand);
+}
+.thread--locked {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--soft);
+  border-style: dashed;
+  color: var(--muted);
+}
+.thread__empty {
+  padding: 0.25rem 0;
+}
+.thread__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+.thread__list li {
+  max-width: 85%;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.thread__list li p {
+  padding: 0.6rem 0.85rem;
+  border-radius: 14px 14px 14px 4px;
+  background: var(--soft);
+  color: var(--ink);
+  font-size: 0.9375rem;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.thread__list li small {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.thread__list li.is-mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.thread__list li.is-mine p {
+  border-radius: 14px 14px 4px 14px;
+  background: var(--brand);
+  color: #fff;
+}
+.thread__compose {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+.thread__compose textarea {
+  flex: 1;
+}
+.dot--inline {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #ff5c7a;
+}
+.status-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding: 0.65rem 1rem;
+  border-radius: 14px;
+  background: var(--brand-50);
+  border: 1px solid var(--brand-100);
+}
+.bulk-bar strong {
+  margin-right: auto;
+  color: var(--ink);
+  font-size: 0.9375rem;
+}
+.bulk-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.bulk-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+}
+.bulk-list li svg {
+  color: var(--muted);
+}
+.candidate-row {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+.candidate-row__pick {
+  margin: 0 0 0 0.6rem !important;
+}
+.candidate-list__all {
+  padding: 0.5rem 0.75rem 0.25rem;
+}
+.candidate__main strong .dot--inline {
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+.other-field {
+  margin-top: 0.9rem;
+  max-width: 26rem;
 }
 
 .input-icon {
@@ -3126,9 +3405,10 @@ a.pill:hover {
 
 .tracker {
   list-style: none;
-  padding: 0;
+  padding: 0 0 0.25rem;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(var(--steps, 5), minmax(4.75rem, 1fr));
+  overflow-x: auto;
 }
 .tracker li {
   position: relative;

@@ -16,6 +16,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { APP_STATUS } from '../data/options'
 import { homeFor, timeAgo, useApp } from '../context/store'
 import { useCompanyApplications, useMyApplications } from '../lib/hooks'
+import { currentLabel } from '../lib/pipeline'
 import type { User } from '../types'
 import { Avatar, CompanyLogo, Logo } from './Brand'
 
@@ -62,11 +63,10 @@ function useNotes(user: User): Note[] {
   const seeker = user.role === 'seeker'
   const mine = useMyApplications(seeker ? user.id : undefined).data
   const incoming = useCompanyApplications(seeker ? undefined : user.id).data
+  const newest = (notes: Note[]) => notes.sort((a, b) => b.at - a.at).slice(0, 8)
   if (seeker) {
-    return mine
+    const moves = mine
       .filter((a) => a.updatedBy === 'employer')
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 8)
       .map((a) => ({
         id: a.id,
         logo: a.logo,
@@ -75,14 +75,29 @@ function useNotes(user: User): Note[] {
         text: (
           <>
             <strong>{a.companyName}</strong> moved your application for {a.jobTitle} to{' '}
-            <strong>{APP_STATUS[a.status].label}</strong>
+            <strong>{currentLabel(a) ?? APP_STATUS[a.status].label}</strong>
           </>
         ),
       }))
+    const messages = mine
+      .filter((a) => a.lastMessageBy === 'employer')
+      .map((a) => ({
+        id: `${a.id}:msg`,
+        logo: a.logo,
+        at: a.lastMessageAt,
+        to: `/applications?app=${a.id}`,
+        text: (
+          <>
+            <strong>{a.companyName}</strong> sent you a message about {a.jobTitle}
+          </>
+        ),
+      }))
+    return newest([...moves, ...messages])
   }
-  return incoming.slice(0, 8).map((a) => ({
+  const logoOf = (name: string) => ({ initials: name.slice(0, 2).toUpperCase(), color: '#6c47ff' })
+  const applied = incoming.map((a) => ({
     id: a.id,
-    logo: { initials: a.applicant.name.slice(0, 2).toUpperCase(), color: '#6c47ff' },
+    logo: logoOf(a.applicant.name),
     at: a.createdAt,
     to: `/employer/candidates?app=${a.id}`,
     text: (
@@ -91,6 +106,20 @@ function useNotes(user: User): Note[] {
       </>
     ),
   }))
+  const replies = incoming
+    .filter((a) => a.lastMessageBy === 'seeker')
+    .map((a) => ({
+      id: `${a.id}:msg`,
+      logo: logoOf(a.applicant.name),
+      at: a.lastMessageAt,
+      to: `/employer/candidates?app=${a.id}`,
+      text: (
+        <>
+          <strong>{a.applicant.name}</strong> sent you a message about {a.jobTitle}
+        </>
+      ),
+    }))
+  return newest([...applied, ...replies])
 }
 
 function Notifications({ user }: { user: User }) {

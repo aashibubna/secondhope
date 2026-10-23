@@ -7,6 +7,8 @@ rules_version = '2';
 // - applications/{jobId_seekerUid}
 //                      a snapshot the seeker sends to one employer. Only those two parties
 //                      can read it, and each side may only make the status moves it owns.
+//   └ messages/{id}    a conversation between those two parties, open once the candidate
+//                      is past résumé shortlisting (interview, offer or hired).
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -49,7 +51,14 @@ service cloud.firestore {
           && d.pledge == c.pledge
           && d.status in ['open', 'closed']
           && d.title is string && d.title.size() > 0 && d.title.size() <= 120
-          && d.description is string && d.description.size() <= 5000;
+          && d.description is string && d.description.size() <= 5000
+          && d.get('questions', []) is list && d.get('questions', []).size() <= 10
+          && d.get('rounds', []) is list && d.get('rounds', []).size() <= 10
+          && (d.get('pay', null) == null
+              || (d.pay.min is number && d.pay.min > 0
+                  && (d.pay.max == null || (d.pay.max is number && d.pay.max >= d.pay.min))
+                  && d.pay.unit in ['', 'K', 'L', 'Cr']
+                  && d.pay.period in ['year', 'month', 'hour']));
       }
 
       allow read: if resource.data.status == 'open' || isUser(resource.data.companyId);
@@ -74,7 +83,9 @@ service cloud.firestore {
         && request.resource.data.updatedBy == 'seeker'
         && job(request.resource.data.jobId).status == 'open'
         && request.resource.data.companyId == job(request.resource.data.jobId).companyId
-        && request.resource.data.coverNote.size() <= 3000;
+        && request.resource.data.coverNote.size() <= 3000
+        && request.resource.data.get('answers', []).size() <= 10
+        && request.resource.data.get('lastMessageAt', 0) == 0;
 
       // Seeker: withdraw at any active stage, or accept an offer.
       allow update: if isSeeker()
@@ -84,15 +95,41 @@ service cloud.firestore {
               && resource.data.status in ['applied', 'reviewing', 'interview', 'offer'])
             || (request.resource.data.status == 'hired' && resource.data.status == 'offer'));
 
-      // Employer: move the application through their pipeline and leave a message.
+      // Employer: move the application through their hiring rounds and leave a note.
       allow update: if isCompany()
-        && changed().hasOnly(['status', 'employerMessage', 'updatedBy', 'updatedAt', 'history'])
+        && changed().hasOnly(['status', 'round', 'rounds', 'employerMessage', 'updatedBy', 'updatedAt', 'history'])
         && request.resource.data.updatedBy == 'employer'
         && request.resource.data.status in ['applied', 'reviewing', 'interview', 'offer', 'not-selected']
         && !(resource.data.status in ['withdrawn', 'hired'])
+        && request.resource.data.get('round', 0) is int && request.resource.data.get('round', 0) >= 0
+        && request.resource.data.get('rounds', []).size() <= 10
         && request.resource.data.employerMessage.size() <= 2000;
 
+      // Either side: stamp who sent the latest message (written alongside the message itself).
+      allow update: if (isSeeker() || isCompany())
+        && changed().hasOnly(['lastMessageAt', 'lastMessageBy'])
+        && resource.data.status in ['interview', 'offer', 'hired']
+        && request.resource.data.lastMessageBy == (isSeeker() ? 'seeker' : 'employer');
+
       allow delete: if isSeeker();
+
+      match /messages/{msgId} {
+        function app() { return get(/databases/$(database)/documents/applications/$(appId)).data; }
+        function party() {
+          return signedIn() && (app().seekerUid == request.auth.uid || app().companyId == request.auth.uid);
+        }
+
+        allow read: if party();
+        allow create: if party()
+          && app().status in ['interview', 'offer', 'hired']
+          && request.resource.data.keys().hasOnly(['from', 'uid', 'text', 'at'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.from == (app().seekerUid == request.auth.uid ? 'seeker' : 'employer')
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000;
+        // Messages are never edited; the seeker removes them when deleting their account.
+        allow delete: if signedIn() && app().seekerUid == request.auth.uid;
+      }
     }
   }
 }

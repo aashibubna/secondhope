@@ -5,10 +5,12 @@ import {
   HOURS,
   JOB_TYPES,
   JOURNEY_STAGES,
+  OTHER,
   SKILL_SUGGESTIONS,
   SUPPORTS,
   WORK_MODES,
 } from '../data/options'
+import { profileErrors } from '../lib/validate'
 import type { Disclosure, JourneyStage, Profile } from '../types'
 import { ChipGroup, ChoiceCards, Field, TagInput, Toggle } from './Fields'
 
@@ -18,6 +20,7 @@ export interface SectionProps {
 }
 
 export function AboutSection({ profile, set }: SectionProps) {
+  const errors = profileErrors(profile)
   return (
     <div className="form-grid">
       <Field label="Headline" hint="A short line about you, e.g. “Designer returning after a career pause”">
@@ -25,6 +28,7 @@ export function AboutSection({ profile, set }: SectionProps) {
           value={profile.headline}
           onChange={(e) => set({ headline: e.target.value })}
           placeholder="What do you do, or want to do?"
+          maxLength={120}
         />
       </Field>
       <Field label="Location">
@@ -32,22 +36,38 @@ export function AboutSection({ profile, set }: SectionProps) {
           value={profile.location}
           onChange={(e) => set({ location: e.target.value })}
           placeholder="City, Country"
+          maxLength={100}
         />
       </Field>
-      <Field label="Phone (optional)">
-        <input value={profile.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="+91" />
-      </Field>
-      <Field label="LinkedIn or portfolio (optional)">
+      <Field label="Phone (optional)" error={errors.phone}>
         <input
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          value={profile.phone}
+          onChange={(e) => set({ phone: e.target.value.replace(/[^\d\s+\-().]/g, '') })}
+          placeholder="+91 98765 43210"
+          maxLength={20}
+          aria-invalid={!!errors.phone}
+        />
+      </Field>
+      <Field label="LinkedIn or portfolio (optional)" error={errors.linkedin}>
+        <input
+          type="url"
+          inputMode="url"
+          autoComplete="url"
           value={profile.linkedin}
           onChange={(e) => set({ linkedin: e.target.value })}
-          placeholder="https://"
+          placeholder="linkedin.com/in/yourname"
+          maxLength={300}
+          aria-invalid={!!errors.linkedin}
         />
       </Field>
       <div className="form-grid__full">
         <Field label="About you" hint="Your strengths, what energises you, what you are looking for next.">
           <textarea
             rows={4}
+            maxLength={2000}
             value={profile.bio}
             onChange={(e) => set({ bio: e.target.value })}
             placeholder="I’m a people-first marketer who…"
@@ -106,7 +126,20 @@ export function PreferencesSection({ profile, set }: SectionProps) {
       </div>
       <div>
         <h4 className="sub-label">Areas you are interested in</h4>
-        <ChipGroup options={FUNCTIONS} value={profile.functions} onChange={(v) => set({ functions: v })} />
+        <ChipGroup options={[...FUNCTIONS, OTHER]} value={profile.functions} onChange={(v) => set({ functions: v })} />
+        {profile.functions.includes(OTHER) && (
+          <div className="other-field">
+            <Field label="Which other area?" hint="e.g. Legal, Research, Hospitality" error={profileErrors(profile).functionsOther}>
+              <input
+                value={profile.functionsOther}
+                onChange={(e) => set({ functionsOther: e.target.value })}
+                placeholder="Type the area you’re interested in"
+                maxLength={60}
+                autoFocus={!profile.functionsOther}
+              />
+            </Field>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -180,6 +213,7 @@ export function ExperienceSection({ profile, set }: SectionProps) {
             <input
               value={profile.careerPauseNote}
               onChange={(e) => set({ careerPauseNote: e.target.value })}
+              maxLength={200}
               placeholder="e.g. “2023–2024: Career pause for health and family”"
             />
           </Field>

@@ -8,6 +8,7 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
+  orderBy,
   query,
   setDoc,
   updateDoc,
@@ -18,6 +19,7 @@ import {
 } from 'firebase/firestore'
 import {
   emptyProfile,
+  type Answer,
   type ApplicantSnapshot,
   type Application,
   type AppStatus,
@@ -25,6 +27,7 @@ import {
   type Disclosed,
   type Job,
   type JobInput,
+  type Message,
   type Profile,
   type Role,
   type User,
@@ -33,12 +36,16 @@ import { col, db } from './firebase'
 
 /* ───────────── helpers ───────────── */
 
-const withId = <T>(id: string, data: DocumentData) => ({ ...data, id }) as T
+const withId = <T>(id: string, data: DocumentData, defaults?: Partial<T>) => ({ ...defaults, ...data, id }) as T
 
-function watchList<T>(q: Query, cb: (rows: T[]) => void, onError?: (e: Error) => void) {
+// Fields added after launch; older documents read as if they had these values.
+const JOB_DEFAULTS: Partial<Job> = { pay: null, questions: [], rounds: ['Interview'] }
+const APP_DEFAULTS: Partial<Application> = { answers: [], round: 0, rounds: ['Interview'], lastMessageAt: 0, lastMessageBy: '' }
+
+function watchList<T>(q: Query, cb: (rows: T[]) => void, onError?: (e: Error) => void, defaults?: Partial<T>) {
   return onSnapshot(
     q,
-    (snap) => cb(snap.docs.map((d) => withId<T>(d.id, d.data()))),
+    (snap) => cb(snap.docs.map((d) => withId<T>(d.id, d.data(), defaults))),
     (e) => {
       console.error(e)
       onError?.(e)
@@ -69,7 +76,7 @@ export function watchUser(uid: string, cb: (u: User | null) => void, onError: (e
       const data = snap.data()
       // A doc without a SecondHope role (e.g. from another app on the same project) counts as "no profile yet".
       const ours = data?.role === 'seeker' || data?.role === 'employer'
-      cb(ours ? withId<User>(snap.id, { profile: emptyProfile, saved: [], ...data }) : null)
+      cb(ours ? withId<User>(snap.id, { saved: [], ...data, profile: { ...emptyProfile, ...data.profile } }) : null)
     },
     onError,
   )
@@ -119,7 +126,7 @@ export async function saveCompany(uid: string, data: Omit<Company, 'id' | 'owner
 /* ───────────── jobs ───────────── */
 
 export const watchOpenJobs = (cb: (jobs: Job[]) => void, onError?: (e: Error) => void) =>
-  watchList<Job>(query(collection(db, col('jobs')), where('status', '==', 'open')), cb, onError)
+  watchList<Job>(query(collection(db, col('jobs')), where('status', '==', 'open')), cb, onError, JOB_DEFAULTS)
 
 export const watchCompanyJobs = (companyId: string, cb: (jobs: Job[]) => void, openOnly = false) =>
   watchList<Job>(
@@ -127,11 +134,13 @@ export const watchCompanyJobs = (companyId: string, cb: (jobs: Job[]) => void, o
       ? query(collection(db, col('jobs')), where('companyId', '==', companyId), where('status', '==', 'open'))
       : query(collection(db, col('jobs')), where('companyId', '==', companyId)),
     cb,
+    undefined,
+    JOB_DEFAULTS,
   )
 
 export async function getJob(id: string) {
   const snap = await getDoc(doc(db, col('jobs'), id))
-  return snap.exists() ? withId<Job>(snap.id, snap.data()) : null
+  return snap.exists() ? withId<Job>(snap.id, snap.data(), JOB_DEFAULTS) : null
 }
 
 export async function createJob(company: Company, input: JobInput) {
@@ -158,10 +167,10 @@ export const deleteJob = (id: string) => deleteDoc(doc(db, col('jobs'), id))
 export const applicationId = (jobId: string, uid: string) => `${jobId}_${uid}`
 
 export const watchMyApplications = (uid: string, cb: (apps: Application[]) => void) =>
-  watchList<Application>(query(collection(db, col('applications')), where('seekerUid', '==', uid)), cb)
+  watchList<Application>(query(collection(db, col('applications')), where('seekerUid', '==', uid)), cb, undefined, APP_DEFAULTS)
 
 export const watchCompanyApplications = (companyId: string, cb: (apps: Application[]) => void) =>
-  watchList<Application>(query(collection(db, col('applications')), where('companyId', '==', companyId)), cb)
+  watchList<Application>(query(collection(db, col('applications')), where('companyId', '==', companyId)), cb, undefined, APP_DEFAULTS)
 
 export function disclosedFor(user: User): Disclosed {
   return { journeyStage: user.profile.journeyStage, supportNeeds: user.profile.supportNeeds }
@@ -190,7 +199,7 @@ export function snapshotOf(user: User): ApplicantSnapshot {
   }
 }
 
-export function apply(user: User, job: Job, coverNote: string) {
+export function apply(user: User, job: Job, coverNote: string, answers: Answer[]) {
   const now = Date.now()
   const app: Omit<Application, 'id'> = {
     jobId: job.id,
@@ -201,27 +210,70 @@ export function apply(user: User, job: Job, coverNote: string) {
     logo: job.logo,
     status: 'applied',
     coverNote: coverNote.trim(),
+    answers: answers.map((a) => ({ question: a.question, answer: a.answer.trim() })).filter((a) => a.answer),
     applicant: snapshotOf(user),
     disclosure: user.profile.disclosure,
     disclosed: willDisclose(user, job) ? disclosedFor(user) : null,
     employerMessage: '',
     updatedBy: 'seeker',
+    round: 0,
+    rounds: job.rounds,
     history: [{ status: 'applied', at: now }],
+    lastMessageAt: 0,
+    lastMessageBy: '',
     createdAt: now,
     updatedAt: now,
   }
   return setDoc(doc(db, col('applications'), applicationId(job.id, user.id)), app)
 }
 
-export function setStatusAsEmployer(app: Application, status: AppStatus, message: string) {
-  const now = Date.now()
-  return updateDoc(doc(db, col('applications'), app.id), {
+export interface Move {
+  app: Application
+  status: AppStatus
+  /** Index into `rounds` while the status is 'interview'. */
+  round: number
+  /** The job's current rounds. */
+  rounds: string[]
+  message: string
+}
+
+function movePatch({ status, round, rounds, message }: Move, now: number) {
+  return {
     status,
+    round,
+    rounds,
     employerMessage: message.trim(),
     updatedBy: 'employer',
     updatedAt: now,
-    history: arrayUnion({ status, at: now }),
-  })
+    history: arrayUnion(status === 'interview' ? { status, at: now, round } : { status, at: now }),
+  }
+}
+
+export const moveCandidate = (move: Move) => updateDoc(doc(db, col('applications'), move.app.id), movePatch(move, Date.now()))
+
+/** Moves several candidates at once — all succeed or none do. */
+export async function moveCandidates(moves: Move[]) {
+  const now = Date.now()
+  const batch = writeBatch(db)
+  moves.forEach((m) => batch.update(doc(db, col('applications'), m.app.id), movePatch(m, now)))
+  await batch.commit()
+}
+
+/* ───────────── messages ───────────── */
+
+const messagesOf = (appId: string) => collection(db, col('applications'), appId, 'messages')
+
+export const watchMessages = (appId: string, cb: (msgs: Message[]) => void) =>
+  watchList<Message>(query(messagesOf(appId), orderBy('at')), cb)
+
+export async function sendMessage(app: Application, from: Message['from'], uid: string, text: string) {
+  const now = Date.now()
+  const batch = writeBatch(db)
+  const msg: Omit<Message, 'id'> = { from, uid, text: text.trim(), at: now }
+  batch.set(doc(messagesOf(app.id)), msg)
+  // Lets the other side's notification bell know without reading every thread.
+  batch.update(doc(db, col('applications'), app.id), { lastMessageAt: now, lastMessageBy: from })
+  await batch.commit()
 }
 
 export function withdraw(app: Application) {
@@ -253,6 +305,8 @@ export async function deleteUserData(user: User) {
   const batch = writeBatch(db)
   if (user.role === 'seeker') {
     const apps = await getDocs(query(collection(db, col('applications')), where('seekerUid', '==', user.id)))
+    const threads = await Promise.all(apps.docs.map((a) => getDocs(messagesOf(a.id))))
+    threads.forEach((t) => t.forEach((m) => batch.delete(m.ref)))
     apps.forEach((a) => batch.delete(a.ref))
   } else {
     const jobs = await getDocs(query(collection(db, col('jobs')), where('companyId', '==', user.id)))
